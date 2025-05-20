@@ -1,0 +1,33 @@
+{
+  "name": "nabi-ts",
+  "version": "0.1.0",
+  "description": "Generate TypeScript code from ABI JSON",
+  "module": "src/index.ts",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "bun build src/index.ts --outdir dist --target node",
+    "prepublish": "bun run build",
+    "start": "bun src/index.ts"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@types/node": "^20.10.0"
+  },
+  "dependencies": {
+    "@polkadot/api": "^16.0.1",
+    "@polkadot/types": "^16.0.1",
+    "@polkadot/types-codec": "^16.0.1",
+    "commander": "^14.0.0"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "bin": {
+    "nabi-ts": "./dist/index.js"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ]
+}
