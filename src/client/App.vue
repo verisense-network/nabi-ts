@@ -63,9 +63,9 @@
               <Button @click="copyToClipboard">Copy to Clipboard</Button>
             </CardAction>
           </CardHeader>
-          <CardContent class="px-4 font-mono overflow-scroll">
+          <CardContent class="px-4 font-mono">
             <div v-if="tsOutput" class="prose">
-              <pre class="whitespace-pre">{{ tsOutput }}</pre>
+              <pre class="whitespace-pre max-h-64 overflow-scroll">{{ tsOutput }}</pre>
             </div>
             <div v-else-if="error" class="error">
               <p>Error: {{ error }}</p>
