@@ -5,36 +5,24 @@
   "module": "src/index.ts",
   "type": "module",
   "main": "dist/index.js",
+  "workspaces": [
+    "packages/*"
+  ],
   "scripts": {
-    "build": "bun build src/index.ts --outdir dist --target node",
-    "prepublish": "bun run build && bun run web:build",
-    "transfer": "bun src/index.ts transfer",
-    "start:explorer": "bun src/index.ts explorer",
-    "build:explorer": "vite build"
+    "build": "bun build --cwd packages/transfer src/index.ts --outdir dist --target node",
+    "prepublish": "bun --cwd packages/transfer run build",
+    "transfer": "bun --cwd packages/transfer src/index.ts transfer",
+    "dev:explorer": "bun --cwd packages/explorer serve",
+    "build:explorer": "bun --cwd packages/explorer build"
   },
   "devDependencies": {
     "@types/bun": "latest",
-    "@types/node": "^22.15.21",
-    "@vitejs/plugin-vue": "^5.2.4",
-    "vite": "^6.3.5",
-    "vue": "^3.5.14"
+    "@types/node": "^22.15.21"
   },
   "dependencies": {
     "@polkadot/api": "^16.0.1",
     "@polkadot/types": "^16.0.1",
-    "@polkadot/types-codec": "^16.0.1",
-    "@tailwindcss/vite": "^4.1.7",
-    "@vueuse/core": "^13.2.0",
-    "class-variance-authority": "^0.7.1",
-    "clsx": "^2.1.1",
-    "commander": "^14.0.0",
-    "lucide-vue-next": "^0.511.0",
-    "reka-ui": "^2.2.1",
-    "sirv": "^2.0.3",
-    "svelte": "^4.2.7",
-    "tailwind-merge": "^3.3.0",
-    "tailwindcss": "^4.1.7",
-    "tw-animate-css": "^1.3.0"
+    "@polkadot/types-codec": "^16.0.1"
   },
   "peerDependencies": {
     "typescript": "^5"

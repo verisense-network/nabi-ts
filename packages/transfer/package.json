@@ -1,0 +1,13 @@
+{
+  "name": "@nabi-ts/transfer",
+  "version": "0.1.0",
+  "description": "Typescript code generator from ABI JSON",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "bun build src/index.ts --outdir dist --target node"
+  },
+  "dependencies": {
+    "commander": "^14.0.0"
+  }
+}

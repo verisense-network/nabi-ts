@@ -2,7 +2,7 @@ import { parseJsonFile } from "./parser";
 import { generateCode } from "./generator";
 import { basename, extname, join } from "path";
 import { Command } from "commander";
-import { startServer } from "./server";
+import { startDevServer } from "./server";
 
 import packageJson from "../package.json";
 
@@ -81,7 +81,7 @@ async function main() {
     .option("-p, --port <port>", "Port to run the server on", "3000")
     .action(async (options) => {
       try {
-        await startServer(options.port);
+        await startDevServer(options.port);
       } catch (error) {
         console.error("Server error:", error);
         process.exit(1);

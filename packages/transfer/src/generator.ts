@@ -4,7 +4,6 @@ import type {
   EnumEntry,
   FunctionEntry,
   GeneratorOptions,
-  TypeDefinition,
 } from "./types";
 import {
   convertType,

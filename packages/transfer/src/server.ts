@@ -83,7 +83,7 @@ export async function startViteServer(port: string | number) {
   return viteProcess;
 }
 
-export async function startServer(port: string | number) {
+export async function startDevServer(port: string | number) {
   const vitePort = Number(port);
   const apiPort = vitePort + 1;
 
@@ -97,5 +97,18 @@ export async function startServer(port: string | number) {
     apiServer,
     viteServer,
     port: vitePort,
+  };
+}
+
+export async function startProdServer(port: string | number) {
+  const apiPort = Number(port);
+
+  const apiServer = await startApiServer(apiPort);
+
+  console.info(`API Server is running at http://localhost:${apiPort}`);
+
+  return {
+    apiServer,
+    port: apiPort,
   };
 }
