@@ -518,12 +518,7 @@ export async function initApi(endpoint: string): Promise<ApiPromise> {
               baseType
             )})`;
           } else {
-            // Ensure proper type mapping, especially for i32 type
             const codecType = getPolkadotCodecType(fieldTypeStr);
-            // Debug logging to verify type mapping
-            console.log(
-              `Field ${fieldName} type: ${fieldTypeStr} -> ${codecType}`
-            );
             return `      ${fieldName}: ${codecType}`;
           }
         })
