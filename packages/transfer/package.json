@@ -5,7 +5,9 @@
   "type": "module",
   "main": "dist/index.js",
   "scripts": {
-    "build": "bun build src/index.ts --outdir dist --target node"
+    "build": "bun build src/index.ts --outdir dist --target node",
+    "prepublish": "bun --cwd packages/transfer run build",
+    "transfer": "bun src/index.ts transfer"
   },
   "dependencies": {
     "commander": "^14.0.0"

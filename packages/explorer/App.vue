@@ -86,6 +86,7 @@ import { ref } from 'vue';
 import JsonStructViewer from './components/JsonStructViewer.vue';
 import { Button } from '@/components/ui/button'
 import { Card, CardHeader, CardTitle, CardAction, CardContent } from '@/components/ui/card'
+import { generateCode } from '@nabi-ts/transfer/src/generator.js'
 
 const jsonInput = ref("");
 const tsOutput = ref("");
@@ -186,29 +187,13 @@ async function handleSubmit() {
   isLoading.value = true;
 
   try {
-    // Validate JSON input
-    JSON.parse(jsonInput.value);
-
-    // Send data to the API
-    const response = await fetch("/api/convert", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ json: jsonInput.value }),
-    });
-
-    const data = await response.json();
-
-    console.log(data);
-
-    if (data.error) {
-      error.value = data.error;
-      tsOutput.value = "";
-    } else {
-      tsOutput.value = data.code;
-    }
+    const entries = JSON.parse(jsonInput.value);
+    
+    const code = await generateCode(entries);
+    
+    tsOutput.value = code;
   } catch (e) {
+    console.error('Error generating code:', e);
     error.value = e instanceof SyntaxError ? "Invalid JSON format" : e.message;
     tsOutput.value = "";
   } finally {
@@ -219,7 +204,6 @@ async function handleSubmit() {
 function parseView() {
   error.value = "";
   try {
-    // 只进行JSON解析检查，具体的格式化工作由组件完成
     const jsonData = JSON.parse(jsonInput.value);
     parsedJsonData.value = jsonData;
     showJsonPreview.value = true;

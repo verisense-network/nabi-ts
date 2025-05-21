@@ -94,9 +94,6 @@ export class Codec {
           InnerTypeClass = this.getTypeClass(genericType);
         }
 
-        console.log("base", BaseClass.name);
-        console.log("inner", InnerTypeClass.name);
-
         if (BaseClass && InnerTypeClass) {
           return BaseClass.with(InnerTypeClass);
         }
