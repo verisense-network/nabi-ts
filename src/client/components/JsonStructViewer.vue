@@ -2,7 +2,7 @@
   <div class="json-struct-viewer">
     <pre v-if="formattedData">{{ formattedData }}</pre>
     <div v-else class="placeholder">
-      <p>无数据可展示</p>
+      <p>No data to display</p>
     </div>
   </div>
 </template>
@@ -37,7 +37,7 @@ const formattedData = computed(() => {
       return JSON.stringify(item, null, 2);
     }).join('\n\n');
   } catch (e) {
-    console.error('解析JSON数据失败:', e);
+    console.error('Failed to parse JSON data:', e);
     return null;
   }
 });

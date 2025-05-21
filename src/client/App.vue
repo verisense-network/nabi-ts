@@ -43,8 +43,8 @@
             </CardAction>
 
           </CardHeader>
-          <CardContent class="px-4 font-mono">
-            <div v-if="parsedJsonData" class="prose max-w-prose">
+          <CardContent class="px-4 font-mono overflow-scroll">
+            <div v-if="parsedJsonData" class="prose">
               <JsonStructViewer :jsonData="parsedJsonData" />
             </div>
             <div v-else-if="error" class="error">
@@ -64,7 +64,7 @@
             </CardAction>
           </CardHeader>
           <CardContent class="px-4 font-mono overflow-scroll">
-            <div v-if="tsOutput" class="prose max-w-prose">
+            <div v-if="tsOutput" class="prose">
               <pre class="whitespace-pre">{{ tsOutput }}</pre>
             </div>
             <div v-else-if="error" class="error">
