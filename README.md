@@ -30,7 +30,7 @@ Parameters:
 ## Example
 
 ```bash
-nabi-ts ./data/data.json ./output
+nabi-ts transfer ./data/data.json
 ```
 
 This will read the `data.json` file and generate the following files in the `./output` directory:
@@ -51,7 +51,7 @@ bun install
 bun run build
 
 # Run locally
-bun run start ./data/data.json ./output
+bun run transfer ./data/data.json
 ```
 
 This project was created using `bun init` in bun v1.2.13. [Bun](https://bun.sh) is a fast all-in-one JavaScript runtime.
