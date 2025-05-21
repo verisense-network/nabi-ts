@@ -6,7 +6,11 @@ import type {
   GeneratorOptions,
   TypeDefinition,
 } from "./types";
-import { convertType, getImportForType } from "./typeConverter";
+import {
+  convertType,
+  convertInputType,
+  getImportForType,
+} from "./typeConverter";
 
 function mapTsToPolkadotType(tsType: string): string {
   switch (tsType.trim()) {
@@ -16,6 +20,8 @@ function mapTsToPolkadotType(tsType: string): string {
       return "Text";
     case "boolean":
       return "bool";
+    case "i32":
+      return "i32"; // 确保 i32 映射为 i32（小写）
     default:
       return tsType.trim();
   }
@@ -30,7 +36,7 @@ function getPolkadotCodecType(tsType: string): string {
     case "boolean":
       return "Bool";
     case "i32":
-      return "I32";
+      return "I32"; // 确保 i32 映射到 I32
     case "u32":
       return "U32";
     case "i64":
@@ -209,7 +215,13 @@ function processFunction(
   functions.push(functionDecl);
 
   const paramTypes = jsInputParams
-    .map((param, index) => (index === 0 ? `${param}: string` : `${param}: any`))
+    .map((param, index) => {
+      if (index === 0) return `${param}: string`;
+      const inputDef = entry.inputs[index - 1];
+      return inputDef
+        ? `${param}: ${convertInputType(inputDef)}`
+        : `${param}: any`;
+    })
     .join(", ");
 
   const nucleusMethod = `nucleus_${entry.method}`;
@@ -271,6 +283,7 @@ function generateTemplateCode(
     "Option",
     "Result",
     "U32",
+    "I32",
     "Text",
   ]);
 
@@ -505,7 +518,13 @@ export async function initApi(endpoint: string): Promise<ApiPromise> {
               baseType
             )})`;
           } else {
-            return `      ${fieldName}: ${getPolkadotCodecType(fieldTypeStr)}`;
+            // Ensure proper type mapping, especially for i32 type
+            const codecType = getPolkadotCodecType(fieldTypeStr);
+            // Debug logging to verify type mapping
+            console.log(
+              `Field ${fieldName} type: ${fieldTypeStr} -> ${codecType}`
+            );
+            return `      ${fieldName}: ${codecType}`;
           }
         })
         .filter((def) => def !== "")

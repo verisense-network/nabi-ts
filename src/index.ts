@@ -2,6 +2,7 @@ import { parseJsonFile } from "./parser";
 import { generateCode } from "./generator";
 import { basename, extname, join } from "path";
 import { Command } from "commander";
+import { startServer } from "./server";
 
 import packageJson from "../package.json";
 
@@ -65,11 +66,26 @@ async function main() {
     .version(packageJson.version);
 
   program
+    .command("transfer")
+    .description("Generate TypeScript code from JSON ABI")
     .argument("<json-file>", "input JSON ABI file path")
     .argument("[output-dir]", "output directory path", "./output")
     .action(async (jsonFilePath, outputDir, options) => {
       const exitCode = await execute(jsonFilePath, outputDir, options);
       process.exit(exitCode);
+    });
+
+  program
+    .command("explorer")
+    .description("Start a web explorer with Vue for ABI conversion")
+    .option("-p, --port <port>", "Port to run the server on", "3000")
+    .action(async (options) => {
+      try {
+        await startServer(options.port);
+      } catch (error) {
+        console.error("Server error:", error);
+        process.exit(1);
+      }
     });
 
   await program.parseAsync();

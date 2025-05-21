@@ -1,4 +1,4 @@
-import type { TypeDefinition } from "./types";
+import type { TypeDefinition, Field } from "./types";
 
 /**
  * Convert ABI type definition to TypeScript type
@@ -14,6 +14,16 @@ export function convertType(type: TypeDefinition): string {
     default:
       return "unknown";
   }
+}
+
+/**
+ * Convert function input parameter type
+ */
+export function convertInputType(input: Field): string {
+  if (input && input.type) {
+    return convertType(input.type);
+  }
+  return "unknown";
 }
 
 /**
@@ -37,7 +47,7 @@ function convertPathType(type: TypeDefinition): string {
     case "i64":
     case "f32":
     case "f64":
-      return "number";
+      return typeName;
     case "bool":
       return "boolean";
     case "String":
@@ -105,6 +115,17 @@ function convertTupleType(type: TypeDefinition): string {
 function convertArrayType(type: TypeDefinition): string {
   if (!type.elem) {
     return "unknown[]";
+  }
+
+  if (type.len !== undefined) {
+    const elemType = convertType(type.elem);
+    const isBasicType = /^[ui]\d+$/.test(elemType);
+
+    if (isBasicType) {
+      return `VecFixed.with(${elemType.toUpperCase()}, ${type.len})`;
+    } else {
+      return `VecFixed.with(${elemType}, ${type.len})`;
+    }
   }
 
   return `${convertType(type.elem)}[]`;
@@ -197,6 +218,11 @@ function getImportsForTupleType(type: TypeDefinition): string[] {
  */
 function getImportsForArrayType(type: TypeDefinition): string[] {
   const imports: string[] = [];
+
+  // 如果存在 len 属性，添加 VecFixed 到导入列表
+  if (type.len !== undefined) {
+    imports.push("VecFixed");
+  }
 
   if (type.elem) {
     imports.push(...getImportForType(type.elem));
