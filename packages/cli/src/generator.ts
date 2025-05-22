@@ -79,8 +79,8 @@ function mapPolkadotTypeToTs(polkadotType: string): string {
           .substring(7, trimmedType.length - 1)
           .split(",");
         if (typeParts.length === 2) {
-          const okType = mapPolkadotTypeToTs(typeParts[0].trim());
-          const errType = mapPolkadotTypeToTs(typeParts[1].trim());
+          const okType = mapPolkadotTypeToTs(typeParts[0].trim()) || 'any';
+          const errType = mapPolkadotTypeToTs(typeParts[1].trim()) || 'any';
           return `{ ok: ${okType}, err: ${errType} }`;
         }
       }
@@ -202,9 +202,9 @@ function processStruct(
     let tsNativeType = fieldType;
     tsNativeType = tsNativeType.replace(/Vec\.with\([^)]+\)/g, (match) => {
       const innerTypeMatch = match.match(/Vec\.with\(([^)]+)\)/);
-      if (innerTypeMatch) {
+      if (innerTypeMatch && innerTypeMatch[1]) {
         const innerType = innerTypeMatch[1];
-        return `Array<${mapPolkadotTypeToTs(innerType)}>`;
+        return `Array<${mapPolkadotTypeToTs(innerType) || 'unknown'}>`;
       }
       return "Array<unknown>";
     });
@@ -213,9 +213,9 @@ function processStruct(
       /VecFixed\.with\([^,]+, \d+\)/g,
       (match) => {
         const innerTypeMatch = match.match(/VecFixed\.with\(([^,]+), \d+\)/);
-        if (innerTypeMatch) {
+        if (innerTypeMatch && innerTypeMatch[1]) {
           const innerType = innerTypeMatch[1];
-          return `Array<${mapPolkadotTypeToTs(innerType)}>`;
+          return `Array<${mapPolkadotTypeToTs(innerType) || 'unknown'}>`;
         }
         return "Array<unknown>";
       }
@@ -528,8 +528,11 @@ function processFunction(
       const inputType = inputParams.find((input) => input.startsWith(param));
 
       if (!inputType) continue;
-
-      const typeStr = inputType.split(":")[1].trim();
+      
+      const parts = inputType.split(":");
+      if (parts.length < 2) continue;
+      
+      const typeStr = parts[1].trim();
 
       const genericTypeAliasMatch =
         typeStr.match(/^([A-Z][A-Za-z0-9_]*)<([^>]+)>$/) ||
@@ -546,14 +549,6 @@ function processFunction(
           polkadotInnerType = "U32";
         } else if (innerType === "boolean") {
           polkadotInnerType = "Bool";
-        } else if (innerType === "u32") {
-          polkadotInnerType = "U32";
-        } else if (innerType === "u64") {
-          polkadotInnerType = "U64";
-        } else if (innerType === "i32") {
-          polkadotInnerType = "I32";
-        } else if (innerType === "i64") {
-          polkadotInnerType = "I64";
         } else {
           polkadotInnerType = innerType;
         }
@@ -595,9 +590,9 @@ function processFunction(
         const tupleContent = typeStr.substring(1, typeStr.length - 1);
 
         const tuplePolkadotTypes = tupleContent.split(",").map((t) => {
-          const trimmed = t.trim();
+          const trimmedType = t.trim();
           if (
-            trimmed.match(/^I[A-Z][A-Za-z0-9_]*$/) &&
+            trimmedType.match(/^I[A-Z][A-Za-z0-9_]*$/) &&
             ![
               "IString",
               "IText",
@@ -612,17 +607,17 @@ function processFunction(
               "II64",
               "II128",
               "IBool",
-            ].includes(trimmed)
+            ].includes(trimmedType)
           ) {
-            return trimmed.substring(1);
-          } else if (trimmed === "string") {
+            return trimmedType.substring(1);
+          } else if (trimmedType === "string") {
             return "Text";
-          } else if (trimmed === "number") {
+          } else if (trimmedType === "number") {
             return "U32";
-          } else if (trimmed === "boolean") {
+          } else if (trimmedType === "boolean") {
             return "Bool";
           }
-          return trimmed;
+          return trimmedType;
         });
 
         createInstancesCode.push(
@@ -644,13 +639,15 @@ function processFunction(
           polkadotType = typeStr;
         }
 
-        createInstancesCode.push(
-          `  const Type${param.charAt(0).toUpperCase() + param.slice(1)} = ${polkadotType};`
-        );
-        createInstancesCode.push(
-          `  const ${param} = new Type${param.charAt(0).toUpperCase() + param.slice(1)}(registry, ${paramName});`
-        );
-        callParams.push(`${param}?.toHex()`);
+        if (param) {
+          createInstancesCode.push(
+            `  const Type${param.charAt(0).toUpperCase() + param.slice(1)} = ${polkadotType};`
+          );
+          createInstancesCode.push(
+            `  const ${param} = new Type${param.charAt(0).toUpperCase() + param.slice(1)}(registry, ${paramName});`
+          );
+          callParams.push(`${param}?.toHex()`);
+        }
       }
     }
   }
@@ -670,6 +667,7 @@ function processFunction(
     entry.output &&
     entry.output.kind === "Path" &&
     entry.output.path &&
+    entry.output.path.length > 0 &&
     entry.output.path[0].match(/^[A-Z]$/) &&
     entry.output.generic_args &&
     entry.output.generic_args.length > 0;
@@ -698,7 +696,7 @@ function processFunction(
       resultOkType = "Null";
 
       neededImports.add("Null");
-    } else if (okType.kind === "Path" && okType.path) {
+    } else if (okType.kind === "Path" && okType.path && okType.path.length > 0) {
       const typeName = okType.path[0];
       if (typeName === "String") {
         resultOkType = "Text";
@@ -734,8 +732,8 @@ function processFunction(
       resultErrType = "Null";
 
       neededImports.add("Null");
-    } else if (errType.kind === "Path" && errType.path) {
-      const typeName = errType.path[0];
+    } else if (errType.kind === "Path" && errType.path && errType.path.length > 0) {
+      const typeName = errType.path[errType.path.length - 1];
       if (typeName === "String") {
         resultErrType = "Text";
       } else if (typeName === "bool") {
@@ -789,8 +787,8 @@ function processFunction(
       typeAliasOkType = "Null";
 
       neededImports.add("Null");
-    } else if (genericArg.kind === "Path" && genericArg.path) {
-      const typeName = genericArg.path[0];
+    } else if (genericArg.kind === "Path" && genericArg.path && genericArg.path.length > 0) {
+      const typeName = genericArg.path[genericArg.path.length - 1];
       if (typeName === "String") {
         typeAliasOkType = "Text";
       } else if (typeName === "bool") {
@@ -1230,7 +1228,7 @@ function generateResultTypeAliasHelper(
   const errType = target.generic_args[1];
 
   let errTypeStr = "Text";
-  if (errType.kind === "Path" && errType.path) {
+  if (errType.kind === "Path" && errType.path && errType.path.length > 0) {
     const typeName = errType.path[errType.path.length - 1];
     if (typeName === "String") {
       errTypeStr = "Text";

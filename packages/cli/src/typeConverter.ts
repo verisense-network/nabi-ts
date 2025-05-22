@@ -115,9 +115,9 @@ function convertPathType(
         const genericParams = type.generic_args
           .map((arg) => convertType(arg, useNativeTypes))
           .join(", ");
-        return `${typeName}<${genericParams}>`;
+        return `${typeName || 'any'}<${genericParams}>`;
       }
-      return typeName;
+      return typeName || 'any';
   }
 }
 
