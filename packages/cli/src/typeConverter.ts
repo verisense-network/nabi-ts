@@ -11,6 +11,12 @@ export function convertType(type: TypeDefinition): string {
       return convertTupleType(type);
     case "Array":
       return convertArrayType(type);
+    case "TypeAlias":
+      // 处理类型别名
+      if (type.target) {
+        return convertType(type.target);
+      }
+      return "unknown";
     default:
       return "unknown";
   }
@@ -34,7 +40,8 @@ function convertPathType(type: TypeDefinition): string {
     return "unknown";
   }
 
-  const typeName = type.path.join(".");
+  // 只取路径的最后一个元素作为类型名称
+  const typeName = type.path[type.path.length - 1];
 
   switch (typeName) {
     case "u8":
@@ -144,6 +151,12 @@ export function getImportForType(type: TypeDefinition): string[] {
       return getImportsForTupleType(type);
     case "Array":
       return getImportsForArrayType(type);
+    case "TypeAlias":
+      // 处理类型别名的导入
+      if (type.target) {
+        return getImportForType(type.target);
+      }
+      return [];
     default:
       return [];
   }
@@ -159,6 +172,7 @@ function getImportsForPathType(type: TypeDefinition): string[] {
     return imports;
   }
 
+  // 只取路径的最后一个元素作为类型名称
   const typeName = type.path[type.path.length - 1] || "";
 
   switch (typeName) {

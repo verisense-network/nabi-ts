@@ -3,6 +3,8 @@ import type {
   StructEntry,
   EnumEntry,
   FunctionEntry,
+  TypeAliasEntry,
+  TypeDefinition,
   GeneratorOptions,
 } from "./types";
 import {
@@ -23,6 +25,68 @@ function mapTsToPolkadotType(tsType: string): string {
       return "i32"; // 确保 i32 映射为 i32（小写）
     default:
       return tsType.trim();
+  }
+}
+
+/**
+ * 将 Polkadot.js 类型转换为 TypeScript 原生类型
+ */
+function mapPolkadotTypeToTs(polkadotType: string): string {
+  if (!polkadotType) return "unknown";
+
+  const trimmedType = polkadotType.trim();
+  switch (trimmedType) {
+    case "U8":
+    case "U16":
+    case "U32":
+    case "U64":
+    case "U128":
+    case "I8":
+    case "I16":
+    case "I32":
+    case "I64":
+    case "I128":
+    case "u8":
+    case "u16":
+    case "u32":
+    case "u64":
+    case "u128":
+    case "i8":
+    case "i16":
+    case "i32":
+    case "i64":
+    case "i128":
+      return "number";
+    case "bool":
+    case "Bool":
+      return "boolean";
+    case "Text":
+    case "String":
+      return "string";
+    default:
+      // 处理可能的复合类型
+      if (trimmedType.startsWith("Option<") && trimmedType.endsWith(">")) {
+        const innerType = trimmedType.substring(7, trimmedType.length - 1);
+        return `${mapPolkadotTypeToTs(innerType)} | null`;
+      }
+
+      if (trimmedType.startsWith("Vec<") && trimmedType.endsWith(">")) {
+        const innerType = trimmedType.substring(4, trimmedType.length - 1);
+        return `Array<${mapPolkadotTypeToTs(innerType)}>`;
+      }
+
+      if (trimmedType.startsWith("Result<") && trimmedType.endsWith(">")) {
+        const typeParts = trimmedType
+          .substring(7, trimmedType.length - 1)
+          .split(",");
+        if (typeParts.length === 2) {
+          const okType = mapPolkadotTypeToTs(typeParts[0].trim());
+          const errType = mapPolkadotTypeToTs(typeParts[1].trim());
+          return `{ ok: ${okType}, err: ${errType} }`;
+        }
+      }
+
+      return trimmedType; // 默认情况下保持原样
   }
 }
 
@@ -60,7 +124,9 @@ export async function generateCode(
   const neededImports = new Set<string>();
 
   const structTypes: string[] = [];
+  const interfaceTypes: string[] = [];
   const enumTypes: string[] = [];
+  const typeAliases: string[] = []; // 添加类型别名数组
   const functions: string[] = [];
   const jsExports: string[] = [];
 
@@ -69,13 +135,22 @@ export async function generateCode(
   for (const entry of entries) {
     switch (entry.type) {
       case "struct":
-        processStruct(entry, structTypes, neededImports, dependencyGraph);
+        processStruct(
+          entry,
+          structTypes,
+          interfaceTypes,
+          neededImports,
+          dependencyGraph
+        );
         break;
       case "enum":
         processEnum(entry, enumTypes, neededImports, dependencyGraph);
         break;
       case "fn":
         processFunction(entry, functions, jsExports, neededImports);
+        break;
+      case "type_alias":
+        processTypeAlias(entry, typeAliases, neededImports, dependencyGraph);
         break;
     }
   }
@@ -85,7 +160,9 @@ export async function generateCode(
     Array.from(neededImports),
     importPath || "@polkadot/types-codec",
     structTypes,
-    enumTypes
+    enumTypes,
+    interfaceTypes,
+    typeAliases // 添加类型别名数组参数
   );
 
   return tsCode;
@@ -94,6 +171,7 @@ export async function generateCode(
 function processStruct(
   entry: StructEntry,
   structTypes: string[],
+  interfaceTypes: string[],
   neededImports: Set<string>,
   dependencyGraph: Map<string, Set<string>>
 ) {
@@ -103,6 +181,7 @@ function processStruct(
   neededImports.add("Struct");
 
   const fields: string[] = [];
+  const interfaceFields: string[] = [];
   for (const field of entry.fields) {
     const fieldImports = getImportForType(field.type);
     fieldImports.forEach((imp) => neededImports.add(imp));
@@ -117,10 +196,77 @@ function processStruct(
       dependencies.add(field.type.path[0]);
     }
 
-    fields.push(
-      `  /** ${field.name} field type: ${convertType(field.type)} */`
+    let fieldType = convertType(field.type);
+
+    fields.push(`  /** ${field.name} field type: ${fieldType} */`);
+
+    let tsNativeType = fieldType;
+    tsNativeType = tsNativeType.replace(/Vec\.with\([^)]+\)/g, (match) => {
+      const innerTypeMatch = match.match(/Vec\.with\(([^)]+)\)/);
+      if (innerTypeMatch) {
+        const innerType = innerTypeMatch[1];
+        return `Array<${mapPolkadotTypeToTs(innerType)}>`;
+      }
+      return "Array<unknown>";
+    });
+
+    tsNativeType = tsNativeType.replace(
+      /VecFixed\.with\([^,]+, \d+\)/g,
+      (match) => {
+        const innerTypeMatch = match.match(/VecFixed\.with\(([^,]+), \d+\)/);
+        if (innerTypeMatch) {
+          const innerType = innerTypeMatch[1];
+          return `Array<${mapPolkadotTypeToTs(innerType)}>`;
+        }
+        return "Array<unknown>";
+      }
     );
+
+    if (tsNativeType.startsWith("[") && tsNativeType.endsWith("]")) {
+      const tupleContent = tsNativeType.substring(1, tsNativeType.length - 1);
+      const tupleTypes = tupleContent
+        .split(",")
+        .map((t) => mapPolkadotTypeToTs(t.trim()));
+      tsNativeType = `[${tupleTypes.join(", ")}]`;
+    }
+
+    tsNativeType = mapPolkadotTypeToTs(tsNativeType);
+
+    tsNativeType = tsNativeType.replace(/\bu\d+\b/g, "number");
+    tsNativeType = tsNativeType.replace(/\bi\d+\b/g, "number");
+
+    tsNativeType = tsNativeType.replace(
+      /Array<([^>]+)>/g,
+      (match, innerType) => {
+        const convertedInnerType = innerType
+          .trim()
+          .replace(/\bu\d+\b/g, "number")
+          .replace(/\bi\d+\b/g, "number");
+        return `Array<${convertedInnerType}>`;
+      }
+    );
+
+    interfaceFields.push(`    ${field.name}: ${tsNativeType};`);
   }
+
+  let interfaceContent = interfaceFields.join("\n");
+
+  interfaceContent = interfaceContent
+    .replace(/\bu\d+\b/g, "number")
+    .replace(/\bi\d+\b/g, "number")
+    .replace(/Array<([^>]+)>/g, (match, innerType) => {
+      const convertedInnerType = innerType
+        .trim()
+        .replace(/\bu\d+\b/g, "number")
+        .replace(/\bi\d+\b/g, "number");
+      return `Array<${convertedInnerType}>`;
+    });
+
+  const interfaceType = `export interface I${entry.name} {
+${interfaceContent}
+}`;
+
+  interfaceTypes.push(interfaceType);
 
   const methods: string[] = [`  constructor(registry: any, value?: any);`];
 
@@ -128,7 +274,9 @@ function processStruct(
     methods.push(`  get ${field.name}(): any;`);
   }
 
-  methods.push(`  static from(registry: any, obj: any): ${entry.name} | null;`);
+  methods.push(
+    `  static from(registry: Registry, obj: I${entry.name}): ${entry.name} | null;`
+  );
 
   const structType = `export class ${entry.name} extends Struct {
 ${fields.join("\n")}
@@ -217,52 +365,268 @@ function processFunction(
     .map((param, index) => {
       if (index === 0) return `${param}: string`;
       const inputDef = entry.inputs[index - 1];
-      return inputDef
-        ? `${param}: ${convertInputType(inputDef)}`
-        : `${param}: any`;
+      if (inputDef) {
+        let paramType = convertInputType(inputDef);
+
+        // 检查是否是结构体类型，如果是，使用对应的接口类型
+        if (
+          paramType.match(/^[A-Z][A-Za-z0-9_]*$/) &&
+          ![
+            "String",
+            "Text",
+            "U8",
+            "U16",
+            "U32",
+            "U64",
+            "U128",
+            "I8",
+            "I16",
+            "I32",
+            "I64",
+            "I128",
+            "Bool",
+          ].includes(paramType)
+        ) {
+          // 可能是用户定义的结构体类型，添加 I 前缀
+          paramType = `I${paramType}`;
+        } else if (paramType.startsWith("[") && paramType.endsWith("]")) {
+          // 处理元组类型，可能包含结构体
+          const tupleContent = paramType.substring(1, paramType.length - 1);
+          const tupleTypes = tupleContent.split(",").map((type) => {
+            const trimmedType = type.trim();
+            if (
+              trimmedType.match(/^[A-Z][A-Za-z0-9_]*$/) &&
+              ![
+                "String",
+                "Text",
+                "U8",
+                "U16",
+                "U32",
+                "U64",
+                "U128",
+                "I8",
+                "I16",
+                "I32",
+                "I64",
+                "I128",
+                "Bool",
+              ].includes(trimmedType)
+            ) {
+              return `I${trimmedType}`;
+            } else {
+              return trimmedType
+                .replace(/\bu\d+\b/g, "number")
+                .replace(/\bi\d+\b/g, "number");
+            }
+          });
+          paramType = `[${tupleTypes.join(", ")}]`;
+        } else {
+          // 转换为 TypeScript 原生类型
+          paramType = paramType.replace(/\bu\d+\b/g, "number");
+          paramType = paramType.replace(/\bi\d+\b/g, "number");
+
+          // 处理嵌套类型
+          paramType = paramType.replace(
+            /Array<([^>]+)>/g,
+            (match, innerType) => {
+              const innerTypeTrimmed = innerType.trim();
+              if (
+                innerTypeTrimmed.match(/^[A-Z][A-Za-z0-9_]*$/) &&
+                ![
+                  "String",
+                  "Text",
+                  "U8",
+                  "U16",
+                  "U32",
+                  "U64",
+                  "U128",
+                  "I8",
+                  "I16",
+                  "I32",
+                  "I64",
+                  "I128",
+                  "Bool",
+                ].includes(innerTypeTrimmed)
+              ) {
+                return `Array<I${innerTypeTrimmed}>`;
+              } else {
+                const convertedInnerType = innerTypeTrimmed
+                  .replace(/\bu\d+\b/g, "number")
+                  .replace(/\bi\d+\b/g, "number");
+                return `Array<${convertedInnerType}>`;
+              }
+            }
+          );
+        }
+
+        // 使用 Arg 后缀来区分参数名称
+        return `${param}Arg: ${paramType}`;
+      }
+      return `${param}Arg: any`;
     })
     .join(", ");
 
   const nucleusMethod = `nucleus_${entry.method}`;
 
-  const rpcParams =
-    jsInputParams.slice(1).length > 0
-      ? `nucleusId, '${entry.name}', ${jsInputParams.slice(1).join(", ")}`
-      : `nucleusId, '${entry.name}'`;
+  // 生成实例创建代码和调用代码
+  const createInstancesCode: string[] = [];
+  const callParams: string[] = ["nucleusId", `'${entry.name}'`];
+
+  for (let i = 1; i < jsInputParams.length; i++) {
+    const param = jsInputParams[i];
+    const paramName = `${param}Arg`; // 采用不同的参数名以避免冲突
+    const inputType = inputParams.find((input) => input.startsWith(param));
+
+    if (!inputType) continue;
+
+    const typeStr = inputType.split(":")[1].trim();
+
+    // 检查是否是泛型类型别名，比如 TypeName<GenericType>
+    const genericTypeAliasMatch =
+      typeStr.match(/^([A-Z][A-Za-z0-9_]*)<([^>]+)>$/) ||
+      typeStr.match(/^([A-Z][A-Za-z0-9_]*)\[(.*)\]$/);
+
+    if (genericTypeAliasMatch) {
+      const typeName = genericTypeAliasMatch[1];
+      const innerType = genericTypeAliasMatch[2] || "any";
+
+      // 转换内部类型
+      let polkadotInnerType;
+      if (innerType === "string") {
+        polkadotInnerType = "Text";
+      } else if (innerType === "number") {
+        polkadotInnerType = "U32";
+      } else if (innerType === "boolean") {
+        polkadotInnerType = "Bool";
+      } else if (innerType === "u32") {
+        polkadotInnerType = "U32";
+      } else if (innerType === "u64") {
+        polkadotInnerType = "U64";
+      } else if (innerType === "i32") {
+        polkadotInnerType = "I32";
+      } else if (innerType === "i64") {
+        polkadotInnerType = "I64";
+      } else {
+        polkadotInnerType = innerType;
+      }
+
+      // 查找是否存在相应的创建函数
+      const createFuncName = `create${typeName}TypeResult`;
+
+      // 使用创建函数（如果存在），否则使用直接创建实例
+      createInstancesCode.push(
+        `  const Type = ${createFuncName}(${polkadotInnerType === innerType ? `"${polkadotInnerType}"` : polkadotInnerType})`
+      );
+      createInstancesCode.push(
+        `  const ${param} = new Type(registry, ${paramName});`
+      );
+      callParams.push(`${param}?.toHex()`);
+    }
+    // 检查是否是结构体类型
+    else if (
+      typeStr.match(/^I[A-Z][A-Za-z0-9_]*$/) &&
+      ![
+        "IString",
+        "IText",
+        "IU8",
+        "IU16",
+        "IU32",
+        "IU64",
+        "IU128",
+        "II8",
+        "II16",
+        "II32",
+        "II64",
+        "II128",
+        "IBool",
+      ].includes(typeStr)
+    ) {
+      // 是结构体接口类型，创建对应的 Polkadot 类型
+      const polkadotType = typeStr.substring(1); // 去掉 I 前缀
+      createInstancesCode.push(`  const Type = ${polkadotType};`);
+      createInstancesCode.push(
+        `  const ${param} = new Type(registry, ${paramName});`
+      );
+      callParams.push(`${param}?.toHex()`);
+    }
+    // 检查是否是元组类型 [IA, string]
+    else if (typeStr.startsWith("[") && typeStr.endsWith("]")) {
+      // 是元组类型，创建 Tuple.with
+      const tupleContent = typeStr.substring(1, typeStr.length - 1);
+      // 将 IA 转换为 A，将 string 转换为 Text 等
+      const tuplePolkadotTypes = tupleContent.split(",").map((t) => {
+        const trimmed = t.trim();
+        if (
+          trimmed.match(/^I[A-Z][A-Za-z0-9_]*$/) &&
+          ![
+            "IString",
+            "IText",
+            "IU8",
+            "IU16",
+            "IU32",
+            "IU64",
+            "IU128",
+            "II8",
+            "II16",
+            "II32",
+            "II64",
+            "II128",
+            "IBool",
+          ].includes(trimmed)
+        ) {
+          return trimmed.substring(1); // 去掉 I 前缀
+        } else if (trimmed === "string") {
+          return "Text";
+        } else if (trimmed === "number") {
+          return "U32";
+        } else if (trimmed === "boolean") {
+          return "Bool";
+        }
+        return trimmed;
+      });
+
+      createInstancesCode.push(
+        `  const Type = Tuple.with([${tuplePolkadotTypes.join(", ")}]);`
+      );
+      createInstancesCode.push(
+        `  const ${param} = new Type(registry, ${paramName});`
+      );
+      callParams.push(`${param}?.toHex()`);
+    }
+    // 处理基本类型
+    else {
+      let polkadotType;
+      if (typeStr === "string") {
+        polkadotType = "Text";
+      } else if (typeStr === "number") {
+        polkadotType = "U32";
+      } else if (typeStr === "boolean") {
+        polkadotType = "Bool";
+      } else {
+        polkadotType = typeStr;
+      }
+
+      createInstancesCode.push(
+        `  const Type${param.charAt(0).toUpperCase() + param.slice(1)} = ${polkadotType};`
+      );
+      createInstancesCode.push(
+        `  const ${param} = new Type${param.charAt(0).toUpperCase() + param.slice(1)}(registry, ${paramName});`
+      );
+      callParams.push(`${param}?.toHex()`);
+    }
+  }
+
+  const instancesCode = createInstancesCode.join("\n");
+  const rpcParams = callParams.join(", ");
 
   const jsImplementation = `
 export async function ${entry.name}(${paramTypes}): Promise<${returnType}> {
   if (!api) throw new Error('API not initialized');
-  const result = await api.rpc('${nucleusMethod}', [${rpcParams}]);
+${instancesCode}
+  const result = await api.rpc('${nucleusMethod}', ${rpcParams});
   return result as any;
 }`;
   jsExports.push(jsImplementation);
-}
-
-/**
- * Generate TypeScript declaration file
- */
-function generateTypeScriptCode(
-  structTypes: string[],
-  enumTypes: string[],
-  functions: string[],
-  imports: string[],
-  importPath: string
-): string {
-  const importStatements =
-    imports.length > 0
-      ? `import { ${imports.join(", ")} } from '${importPath}';\n`
-      : "";
-
-  const apiImport = `import { ApiPromise } from '@polkadot/api';\n\n`;
-
-  const initApiTypeDecl = `export function initApi(endpoint: string): Promise<ApiPromise>;`;
-
-  return `${importStatements}${apiImport}${structTypes.join(
-    "\n\n"
-  )}\n\n${enumTypes.join("\n\n")}\n\n${initApiTypeDecl}\n${functions.join(
-    "\n"
-  )}`;
 }
 
 /**
@@ -273,7 +637,9 @@ function generateTemplateCode(
   imports: string[],
   importPath: string,
   structTypes: string[],
-  enumTypes: string[]
+  enumTypes: string[],
+  interfaceTypes: string[] = [],
+  typeAliases: string[] = [] // 添加类型别名数组参数
 ): string {
   const neededTypes = new Set([
     "Struct",
@@ -330,7 +696,7 @@ function generateTemplateCode(
 `;
 
   const apiInit = `
-import { HttpProvider } from "@polkadot/rpc-provider";
+import { ApiPromise, HttpProvider } from "@polkadot/api";
 import { TypeRegistry } from '@polkadot/types';
 import type { Registry } from '@polkadot/types/types';
 
@@ -534,7 +900,7 @@ ${typeDefinitions}
 
 ${getters}
 
-  static from(registry: Registry, obj: any): ${className} | null {
+  static from(registry: Registry, obj: I${className}): ${className} | null {
     if (!obj) return null;
     return new ${className}(registry, obj);
   }
@@ -578,10 +944,125 @@ export const ${enumName} = {
     })
     .join("\n");
 
+  // 添加接口定义到最终生成的代码中
+  const interfaceDefinitions = interfaceTypes.join("\n\n");
+
+  // 添加类型别名定义
+  const typeAliasDefinitions = typeAliases.join("\n\n");
+
   return `${fileHeader}${importStatements}${finalApiInit}
+${typeAliasDefinitions}
+${interfaceDefinitions}
 ${jsStructImplementations}
 ${jsEnumImplementations}
 ${jsExports.join("\n")}`;
+}
+
+/**
+ * Process type alias entry
+ */
+function processTypeAlias(
+  entry: TypeAliasEntry,
+  typeAliases: string[],
+  neededImports: Set<string>,
+  dependencyGraph: Map<string, Set<string>>
+) {
+  const dependencies = new Set<string>();
+  const { name, target, generics } = entry;
+
+  // 获取类型别名的实际类型表示
+  const targetType = convertType(target);
+
+  // 收集导入信息
+  const imports = getImportForType(target);
+  imports.forEach((imp) => neededImports.add(imp));
+
+  // 创建类型别名定义
+  let typeAliasDefinition = "";
+
+  if (generics && generics.length > 0) {
+    // 带泛型参数的类型别名
+    const genericParams = generics.join(", ");
+    typeAliasDefinition = `export type ${name}<${genericParams}> = ${targetType};`;
+
+    // 对于 Result 类型，添加创建辅助函数
+    if (target.kind === "Path" && target.path && target.path[0] === "Result") {
+      // 为 Result 类型别名添加工厂函数
+      const helperFunction = generateResultTypeAliasHelper(name, target);
+      if (helperFunction) {
+        typeAliasDefinition += "\n\n" + helperFunction;
+      }
+    }
+  } else {
+    // 普通类型别名
+    typeAliasDefinition = `export type ${name} = ${targetType};`;
+
+    // 为普通类型别名添加辅助函数（如果适用）
+    if (target.kind === "Path" && target.path) {
+      const helperFunction = generateTypeAliasHelper(name, target);
+      if (helperFunction) {
+        typeAliasDefinition += "\n\n" + helperFunction;
+      }
+    }
+  }
+
+  // 添加到类型别名列表
+  typeAliases.push(typeAliasDefinition);
+
+  // 更新依赖图
+  dependencyGraph.set(name, dependencies);
+}
+
+/**
+ * 为 Result 类型的类型别名生成辅助函数
+ */
+function generateResultTypeAliasHelper(
+  name: string,
+  target: TypeDefinition
+): string | null {
+  if (!target.generic_args || target.generic_args.length !== 2) {
+    return null;
+  }
+
+  const okType = target.generic_args[0];
+  const errType = target.generic_args[1];
+
+  // 从错误类型中获取实际类型（通常是 String）
+  let errTypeStr = "Text";
+  if (errType.kind === "Path" && errType.path) {
+    const typeName = errType.path[errType.path.length - 1];
+    if (typeName === "String") {
+      errTypeStr = "Text";
+    } else {
+      // 对于其他类型，使用原始类型名
+      errTypeStr = typeName;
+    }
+  }
+
+  // 生成工厂函数
+  return `
+export function create${name}TypeResult(OkType: any) {
+  return Result.with({
+    Ok: OkType,
+    Err: ${errTypeStr}
+  });
+}`;
+}
+
+/**
+ * 为普通类型别名生成辅助函数
+ */
+function generateTypeAliasHelper(
+  name: string,
+  target: TypeDefinition
+): string | null {
+  // 暂时只为特定类型生成辅助函数
+  if (!target.path || target.path.length === 0) {
+    return null;
+  }
+
+  // 这里可以为其他类型添加特定的辅助函数
+  return null;
 }
 
 /**

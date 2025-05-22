@@ -1,4 +1,4 @@
-export type AbiEntry = StructEntry | EnumEntry | FunctionEntry;
+export type AbiEntry = StructEntry | EnumEntry | FunctionEntry | TypeAliasEntry;
 
 export interface StructEntry {
   type: "struct";
@@ -31,7 +31,7 @@ export interface Variant {
 }
 
 export interface TypeDefinition {
-  kind: "Path" | "Tuple" | "Array";
+  kind: "Path" | "Tuple" | "Array" | "TypeAlias";
 
   path?: string[];
   generic_args?: TypeDefinition[];
@@ -40,6 +40,17 @@ export interface TypeDefinition {
 
   elem?: TypeDefinition;
   len?: number;
+
+  // TypeAlias 类型特有属性
+  target?: TypeDefinition;
+  generics?: string[];
+}
+
+export interface TypeAliasEntry {
+  type: "type_alias";
+  name: string;
+  generics?: string[];
+  target: TypeDefinition;
 }
 
 export interface GeneratorOptions {
