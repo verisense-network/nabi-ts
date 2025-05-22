@@ -11,6 +11,8 @@ import {
   tv as tvFn,
   bbb as bbbFn,
   cc as ccFn,
+  should_not_call_put,
+  should_call_put,
 } from "../output/data.ts";
 
 const nucleusId = "kGfsp8zVbB4GfiwSjpejLTLM8R4JbsPtniKhu1ycVjJpLYLZp";
@@ -44,6 +46,12 @@ try {
 
   const ccRes = await ccFn(nucleusId, "aaa", "bbc");
   console.log("ccRes", ccRes.toHuman());
+
+  // const shouldNotCallPutRes = await should_not_call_put(nucleusId);
+  // console.log("shouldNotCallPutRes", shouldNotCallPutRes.toHuman());
+
+  // const shouldCallPutRes = await should_call_put(nucleusId);
+  // console.log("shouldCallPutRes", shouldCallPutRes.toHuman());
 } catch (error) {
   console.error("Error:", error);
 }

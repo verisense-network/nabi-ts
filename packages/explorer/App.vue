@@ -63,7 +63,6 @@
             </div>
           </CardContent>
         </Card>
-
       </div>
     </div>
   </main>
@@ -162,7 +161,6 @@ function closeJsonPreview() {
 
 <style>
 main {
-  max-width: 1200px;
   margin: 0 auto;
   padding: 2rem;
 }
@@ -179,6 +177,7 @@ h1 {
 .container {
   display: flex;
   flex-direction: column;
+  margin: 0 auto;
 }
 
 .file-input {

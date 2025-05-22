@@ -18,14 +18,9 @@
             <Input v-model="apiEndpoint" placeholder="http://localhost:9944" class="mt-1" />
           </div>
 
-          <!-- <div>
-            <Label>Nucleus ID</Label>
-            <Input v-model="nucleusId" placeholder="输入Nucleus ID" class="mt-1" />
-          </div> -->
-
           <div class="flex space-x-2 mt-4">
             <Button @click="initializeApi" :disabled="apiInitializing">
-              {{ apiInitializing ? '连接中...' : '初始化API' }}
+              {{ apiInitializing ? '连接中...' : apiInitialized ? '已连接' : '连接' }}
             </Button>
           </div>
 
@@ -101,7 +96,7 @@
 
                 <div v-if="func.result" class="mt-3">
                   <Label class="text-xs">结果:</Label>
-                  <pre class="bg-muted p-2 rounded text-xs mt-1">{{ func.result }}</pre>
+                  <pre class="bg-muted p-2 rounded text-xs mt-1 whitespace-pre-wrap">{{ func.result }}</pre>
                 </div>
               </div>
             </div>
@@ -122,6 +117,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
+import * as codecTypes from '@polkadot/types-codec';
 import { ApiPromise, HttpProvider } from '@polkadot/api';
 import { TypeRegistry } from '@polkadot/types';
 import { transform } from 'sucrase';
@@ -162,69 +158,33 @@ async function initializeApi() {
 
     console.log('创建模拟 API 环境...');
 
-    // 创建模拟的核心对象
-    class MockTypeRegistry {
-      constructor() {
-        this.registry = {};
-      }
-      register(types) {
-        Object.assign(this.registry, types);
-        return this;
-      }
-      createType(type, value) {
-        return value;
-      }
-    }
+    window.Text = codecTypes.Text;
+    window.U8 = codecTypes.U8;
+    window.U16 = codecTypes.U16;
+    window.U32 = codecTypes.U32;
+    window.U64 = codecTypes.U64;
+    window.U128 = codecTypes.U128;
+    window.I8 = codecTypes.I8;
+    window.I16 = codecTypes.I16;
+    window.I32 = codecTypes.I32;
+    window.I64 = codecTypes.I64;
+    window.I128 = codecTypes.I128;
+    window.Bool = codecTypes.Bool;
+    window.Bytes = codecTypes.Bytes;
+    window.Null = codecTypes.Null;
+    window.Struct = codecTypes.Struct;
+    window.Option = codecTypes.Option;
+    window.Result = codecTypes.Result;
+    window.Vec = codecTypes.Vec;
+    window.VecFixed = codecTypes.VecFixed;
+    window.Tuple = codecTypes.Tuple;
 
-    class MockStruct {
-      constructor(registry, definition, value = {}) {
-        this.registry = registry;
-        this.definition = definition;
-        this.value = value;
+    window.registry = new TypeRegistry();
 
-        // 可访问的属性
-        for (const key in definition) {
-          if (value && value[key] !== undefined) {
-            this[key] = value[key];
-          } else {
-            this[key] = null;
-          }
-        }
-      }
-
-      get(key) {
-        return this[key];
-      }
-
-      toHex() {
-        return '0x' + JSON.stringify(this.toJSON());
-      }
-
-      toJSON() {
-        const result = {};
-        for (const key in this.definition) {
-          const value = this[key];
-          if (value && typeof value.toJSON === 'function') {
-            result[key] = value.toJSON();
-          } else {
-            result[key] = value;
-          }
-        }
-        return result;
-      }
-
-      toHuman() {
-        return this.toJSON();
-      }
-    }
-
-    // 使用真实的 HttpProvider 和 ApiPromise
-    // 这些已经从 @polkadot/api 包中导入
-
-    // 全局命名空间对象
     window[apiNamespace] = {
-      registry: new TypeRegistry()
+      registry: window.registry
     };
+
 
     // 真实的初始化函数 - 独立于其他API函数，直接定义在命名空间上
     window[apiNamespace].initApi = async function (endpoint) {
