@@ -41,7 +41,6 @@ export interface TypeDefinition {
   elem?: TypeDefinition;
   len?: number;
 
-  // TypeAlias 类型特有属性
   target?: TypeDefinition;
   generics?: string[];
 }

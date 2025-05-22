@@ -2,19 +2,23 @@ import type { TypeDefinition, Field } from "./types";
 
 /**
  * Convert ABI type definition to TypeScript type
+ * @param type 类型定义
+ * @param useNativeTypes 是否使用TypeScript原生类型（而非Polkadot.js类型）
  */
-export function convertType(type: TypeDefinition): string {
+export function convertType(
+  type: TypeDefinition,
+  useNativeTypes: boolean = false
+): string {
   switch (type.kind) {
     case "Path":
-      return convertPathType(type);
+      return convertPathType(type, useNativeTypes);
     case "Tuple":
-      return convertTupleType(type);
+      return convertTupleType(type, useNativeTypes);
     case "Array":
-      return convertArrayType(type);
+      return convertArrayType(type, useNativeTypes);
     case "TypeAlias":
-      // 处理类型别名
       if (type.target) {
-        return convertType(type.target);
+        return convertType(type.target, useNativeTypes);
       }
       return "unknown";
     default:
@@ -24,23 +28,32 @@ export function convertType(type: TypeDefinition): string {
 
 /**
  * Convert function input parameter type
+ * @param input 函数参数字段
+ * @param useNativeTypes 是否使用TypeScript原生类型
  */
-export function convertInputType(input: Field): string {
+export function convertInputType(
+  input: Field,
+  useNativeTypes: boolean = true
+): string {
   if (input && input.type) {
-    return convertType(input.type);
+    return convertType(input.type, useNativeTypes);
   }
   return "unknown";
 }
 
 /**
  * Convert Path type
+ * @param type 类型定义
+ * @param useNativeTypes 是否使用TypeScript原生类型（而非Polkadot.js类型）
  */
-function convertPathType(type: TypeDefinition): string {
+function convertPathType(
+  type: TypeDefinition,
+  useNativeTypes: boolean = false
+): string {
   if (!type.path || type.path.length === 0) {
     return "unknown";
   }
 
-  // 只取路径的最后一个元素作为类型名称
   const typeName = type.path[type.path.length - 1];
 
   switch (typeName) {
@@ -54,18 +67,18 @@ function convertPathType(type: TypeDefinition): string {
     case "i64":
     case "f32":
     case "f64":
-      return typeName;
+      return useNativeTypes ? "number" : typeName;
     case "bool":
       return "boolean";
     case "String":
-      return "string";
+      return useNativeTypes ? "string" : "Text";
     case "Vec":
       if (
         type.generic_args &&
         type.generic_args.length > 0 &&
         type.generic_args[0]
       ) {
-        return `Array<${convertType(type.generic_args[0])}>`;
+        return `Array<${convertType(type.generic_args[0], useNativeTypes)}>`;
       }
       return "Array<unknown>";
     case "Option":
@@ -74,7 +87,7 @@ function convertPathType(type: TypeDefinition): string {
         type.generic_args.length > 0 &&
         type.generic_args[0]
       ) {
-        return `${convertType(type.generic_args[0])} | null`;
+        return `${convertType(type.generic_args[0], useNativeTypes)} | null`;
       }
       return "unknown | null";
     case "Result":
@@ -84,14 +97,24 @@ function convertPathType(type: TypeDefinition): string {
         type.generic_args[0] &&
         type.generic_args[1]
       ) {
-        return `{ ok: ${convertType(type.generic_args[0])}, err: ${convertType(
-          type.generic_args[1]
-        )} }`;
+        if (useNativeTypes) {
+          return `{ ok: ${convertType(type.generic_args[0], true)} | null, err: ${convertType(
+            type.generic_args[1],
+            true
+          )} | null }`;
+        } else {
+          return `Result<${convertType(type.generic_args[0], false)}, ${convertType(
+            type.generic_args[1],
+            false
+          )}>`;
+        }
       }
       return "unknown";
     default:
       if (type.generic_args && type.generic_args.length > 0) {
-        const genericParams = type.generic_args.map(convertType).join(", ");
+        const genericParams = type.generic_args
+          .map((arg) => convertType(arg, useNativeTypes))
+          .join(", ");
         return `${typeName}<${genericParams}>`;
       }
       return typeName;
@@ -100,32 +123,46 @@ function convertPathType(type: TypeDefinition): string {
 
 /**
  * Convert Tuple type
+ * @param type 类型定义
+ * @param useNativeTypes 是否使用TypeScript原生类型
  */
-function convertTupleType(type: TypeDefinition): string {
+function convertTupleType(
+  type: TypeDefinition,
+  useNativeTypes: boolean = false
+): string {
   if (!type.tuple_args) {
     return "[unknown]";
   }
 
   if (type.tuple_args.length === 0) {
-    return "[]";
+    return "Null";
   }
 
-  const tupleTypes = type.tuple_args
-    .map((arg) => (arg ? convertType(arg) : "unknown"))
+  const tupleElements = type.tuple_args
+    .map((t) => convertType(t, useNativeTypes))
     .join(", ");
-  return `[${tupleTypes}]`;
+  return `[${tupleElements}]`;
 }
 
 /**
  * Convert Array type
+ * @param type 类型定义
+ * @param useNativeTypes 是否使用TypeScript原生类型
  */
-function convertArrayType(type: TypeDefinition): string {
+function convertArrayType(
+  type: TypeDefinition,
+  useNativeTypes: boolean = false
+): string {
   if (!type.elem) {
     return "unknown[]";
   }
 
   if (type.len !== undefined) {
-    const elemType = convertType(type.elem);
+    if (useNativeTypes) {
+      return `${convertType(type.elem, useNativeTypes)}[]`;
+    }
+
+    const elemType = convertType(type.elem, false);
     const isBasicType = /^[ui]\d+$/.test(elemType);
 
     if (isBasicType) {
@@ -135,7 +172,7 @@ function convertArrayType(type: TypeDefinition): string {
     }
   }
 
-  return `${convertType(type.elem)}[]`;
+  return `${convertType(type.elem, useNativeTypes)}[]`;
 }
 
 /**
@@ -152,7 +189,6 @@ export function getImportForType(type: TypeDefinition): string[] {
     case "Array":
       return getImportsForArrayType(type);
     case "TypeAlias":
-      // 处理类型别名的导入
       if (type.target) {
         return getImportForType(type.target);
       }
@@ -172,7 +208,6 @@ function getImportsForPathType(type: TypeDefinition): string[] {
     return imports;
   }
 
-  // 只取路径的最后一个元素作为类型名称
   const typeName = type.path[type.path.length - 1] || "";
 
   switch (typeName) {
@@ -233,7 +268,6 @@ function getImportsForTupleType(type: TypeDefinition): string[] {
 function getImportsForArrayType(type: TypeDefinition): string[] {
   const imports: string[] = [];
 
-  // 如果存在 len 属性，添加 VecFixed 到导入列表
   if (type.len !== undefined) {
     imports.push("VecFixed");
   }

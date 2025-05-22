@@ -2,10 +2,8 @@ import { TypeRegistry } from "@polkadot/types";
 import * as codecTypes from "@polkadot/types-codec";
 import { hexToU8a, isHex, u8aToHex } from "@polkadot/util";
 
-// Create registry instance
 export const registry = new TypeRegistry();
 
-// Type mapping table
 export const TYPE_MAP = {
   u8: "U8",
   u16: "U16",
@@ -146,7 +144,7 @@ export class Codec {
           json: Array.isArray(value) ? value : [],
         };
       }
-      // Format input
+
       let formattedValue = value;
       if (typeof value === "string") {
         if (!value.startsWith("[")) {
@@ -156,7 +154,6 @@ export class Codec {
         formattedValue = JSON.parse(formattedValue);
       }
 
-      // Special handling for Vec<u8>
       if (innerType === "u8") {
         if (Array.isArray(formattedValue)) {
           const bytesArray = new Uint8Array(formattedValue);
@@ -173,7 +170,6 @@ export class Codec {
         }
       }
 
-      // Other Vec types
       let InnerTypeClass;
       if (
         [
@@ -189,13 +185,11 @@ export class Codec {
           "i128",
         ].includes(innerType)
       ) {
-        // 对基本数字类型使用正确的大写格式
         const properTypeName =
           innerType.charAt(0).toUpperCase() +
           innerType.substring(1).toUpperCase();
         InnerTypeClass = (codecTypes as any)[properTypeName];
       } else {
-        // 其他类型使用正常处理
         InnerTypeClass = this.getTypeClass(innerType);
       }
       if (InnerTypeClass) {
@@ -363,5 +357,4 @@ export class Codec {
   }
 }
 
-// Export singleton instance
 export const codec = new Codec();

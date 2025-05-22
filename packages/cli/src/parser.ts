@@ -1,16 +1,17 @@
 import type { AbiEntry } from "./types";
 
-export async function parseJsonFile(filePath: string, jsonContent?: string): Promise<AbiEntry[]> {
+export async function parseJsonFile(
+  filePath: string,
+  jsonContent?: string
+): Promise<AbiEntry[]> {
   const entries: AbiEntry[] = [];
 
   try {
     let content: string;
-    
+
     if (jsonContent) {
-      // 使用直接提供的JSON内容
       content = jsonContent;
     } else if (filePath) {
-      // 从文件读取JSON内容
       const file = Bun.file(filePath);
       content = await file.text();
     } else {
