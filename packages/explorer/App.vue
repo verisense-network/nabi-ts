@@ -26,36 +26,12 @@
       </Card>
 
       <div class="flex gap-2 justify-center my-4">
-        <Button @click="parseView" :disabled="!jsonInput">
-          Parse Preview
-        </Button>
         <Button @click="handleSubmit" :disabled="isLoading || !jsonInput">
-          {{ isLoading ? "Converting..." : "Convert to TypeScript" }}
+          {{ isLoading ? "Converting..." : "Convert" }}
         </Button>
       </div>
 
       <div class="space-y-4">
-        <Card>
-          <CardHeader>
-            <CardTitle>Parse Preview</CardTitle>
-            <CardAction class="space-x-2">
-              <Button @click="copyToClipboard">Copy to Clipboard</Button>
-            </CardAction>
-
-          </CardHeader>
-          <CardContent class="px-4 font-mono overflow-scroll">
-            <div v-if="parsedJsonData" class="prose">
-              <JsonStructViewer :jsonData="parsedJsonData" />
-            </div>
-            <div v-else-if="error" class="error">
-              <p>Error: {{ error }}</p>
-            </div>
-            <div v-else class="placeholder">
-              <p>Generated TypeScript will appear here</p>
-            </div>
-          </CardContent>
-        </Card>
-
         <Card>
           <CardHeader>
             <CardTitle>TypeScript Output</CardTitle>
@@ -65,7 +41,19 @@
           </CardHeader>
           <CardContent class="px-4 font-mono">
             <div v-if="tsOutput" class="prose">
-              <pre class="whitespace-pre max-h-64 overflow-scroll">{{ tsOutput }}</pre>
+              <div class="mb-4">
+                <pre class="whitespace-pre max-h-64 overflow-scroll">{{ tsOutput }}</pre>
+              </div>
+              <div class="mt-8 border-t pt-4">
+                <h3 class="text-lg font-medium mb-4">Structs</h3>
+              </div>
+              <div v-if="parsedJsonData" class="prose">
+                <JsonStructViewer :jsonData="parsedJsonData" />
+              </div>
+              <div class="mt-8 border-t pt-4">
+                <h3 class="text-lg font-medium mb-4">Functions</h3>
+                <TsFunctionExplorer :codeString="tsOutput" />
+              </div>
             </div>
             <div v-else-if="error" class="error">
               <p>Error: {{ error }}</p>
@@ -84,6 +72,7 @@
 <script setup>
 import { ref } from 'vue';
 import JsonStructViewer from './components/JsonStructViewer.vue';
+import TsFunctionExplorer from './components/TsFunctionExplorer.vue';
 import { Button } from '@/components/ui/button'
 import { Card, CardHeader, CardTitle, CardAction, CardContent } from '@/components/ui/card'
 import { generateCode } from '@nabi-ts/cli/src/generator.js'
@@ -142,6 +131,8 @@ async function handleSubmit() {
     const entries = JSON.parse(jsonInput.value);
 
     const code = await generateCode(entries);
+
+    parseView();
 
     tsOutput.value = code;
   } catch (e) {
