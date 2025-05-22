@@ -86,7 +86,7 @@ import { ref } from 'vue';
 import JsonStructViewer from './components/JsonStructViewer.vue';
 import { Button } from '@/components/ui/button'
 import { Card, CardHeader, CardTitle, CardAction, CardContent } from '@/components/ui/card'
-import { generateCode } from '@nabi-ts/transfer/src/generator.js'
+import { generateCode } from '@nabi-ts/cli/src/generator.js'
 
 const jsonInput = ref("");
 const tsOutput = ref("");
@@ -142,6 +142,55 @@ function loadExample() {
         "name": "E",
         "type": "struct"
       },
+      {
+        "inputs": [
+          {
+            "name": "a",
+            "type": {
+              "generic_args": [],
+              "kind": "Path",
+              "path": [
+                "String"
+              ]
+            }
+          },
+          {
+            "name": "b",
+            "type": {
+              "generic_args": [],
+              "kind": "Path",
+              "path": [
+                "String"
+              ]
+            }
+          }
+        ],
+        "method": "post",
+        "name": "cc",
+        "output": {
+          "generic_args": [
+            {
+              "generic_args": [],
+              "kind": "Path",
+              "path": [
+                "String"
+              ]
+            },
+            {
+              "generic_args": [],
+              "kind": "Path",
+              "path": [
+                "String"
+              ]
+            }
+          ],
+          "kind": "Path",
+          "path": [
+            "Result"
+          ]
+        },
+        "type": "fn"
+      },
     ],
     null,
     2
@@ -188,9 +237,9 @@ async function handleSubmit() {
 
   try {
     const entries = JSON.parse(jsonInput.value);
-    
+
     const code = await generateCode(entries);
-    
+
     tsOutput.value = code;
   } catch (e) {
     console.error('Error generating code:', e);

@@ -330,7 +330,7 @@ function generateTemplateCode(
 `;
 
   const apiInit = `
-import { ApiPromise, WsProvider } from '@polkadot/api';
+import { HttpProvider } from "@polkadot/rpc-provider";
 import { TypeRegistry } from '@polkadot/types';
 import type { Registry } from '@polkadot/types/types';
 
@@ -352,7 +352,7 @@ function registerTypes(): Registry {
 registerTypes();
 
 export async function initApi(endpoint: string): Promise<ApiPromise> {
-  const provider = new WsProvider(endpoint);
+  const provider = new HttpProvider(endpoint);
   api = await ApiPromise.create({ 
     provider,
     registry 
@@ -425,7 +425,7 @@ export async function initApi(endpoint: string): Promise<ApiPromise> {
           if (fieldMatch) {
             const fieldName = fieldMatch[1];
             const fieldTypeStr = fieldMatch[2]?.trim() || "";
-            let polkadotType = null;
+            let polkadotType: string | null = null;
             if (fieldTypeStr.startsWith("Array<")) {
               polkadotType = "Vec";
             } else if (fieldTypeStr.includes(" | null")) {

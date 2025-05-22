@@ -9,9 +9,8 @@
     "packages/*"
   ],
   "scripts": {
-    "build": "bun build --cwd packages/transfer src/index.ts --outdir dist --target node",
-    "prepublish": "bun --cwd packages/transfer run build",
-    "transfer": "bun --cwd packages/transfer src/index.ts transfer",
+    "build:cli": "bun --cwd packages/cli build",
+    "start:cli": "bun --cwd packages/cli start",
     "dev:explorer": "bun --cwd packages/explorer serve",
     "build:explorer": "bun --cwd packages/explorer build"
   },

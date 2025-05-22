@@ -1,13 +1,13 @@
 {
-  "name": "@nabi-ts/transfer",
+  "name": "@nabi-ts/cli",
   "version": "0.1.0",
   "description": "Typescript code generator from ABI JSON",
   "type": "module",
   "main": "dist/index.js",
   "scripts": {
     "build": "bun build src/index.ts --outdir dist --target node",
-    "prepublish": "bun --cwd packages/transfer run build",
-    "transfer": "bun src/index.ts transfer"
+    "prepublish": "bun run build",
+    "start": "bun src/index.ts"
   },
   "dependencies": {
     "commander": "^14.0.0"

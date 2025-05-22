@@ -1,0 +1,26 @@
+[package]
+name = "jsoninterface"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+parity-scale-codec = { version = "3.6", features = ["derive"] }
+serde = { version = "1.0", features = ["derive"] }
+vrs-core-sdk = { git = "https://github.com/verisense-network/vrs-core-sdk.git", branch = "json-interface" }
+sha2 = { version = "0.10", default-features = false }
+regex = "1.11.1"
+serde_json = "1"
+hex = "0.4"
+flate2 = "1.0"
+ethabi = { version = "18.0.0", features = ["rlp","serde"], default-features = false }
+primitive-types = { version = "0.12.2", features = ["rlp"], default-features = false }
+thiserror = "1.0.69"
+rlp = {version = "0.5", features = ["derive"]}
+bytes = {version = "1.4", features = ["serde"]}
+tiny-keccak = "2.0.2"
+const-hex = "1.14.0"
+rust_decimal = "1.37"
+getrandom = { version = "0.2", features = ["js"] }

@@ -16,11 +16,18 @@
         "typescript": "^5",
       },
     },
+    "packages/cli": {
+      "name": "@nabi-ts/cli",
+      "version": "0.1.0",
+      "dependencies": {
+        "commander": "^14.0.0",
+      },
+    },
     "packages/explorer": {
       "name": "@nabi-ts/explorer",
       "version": "0.1.0",
       "dependencies": {
-        "@nabi-ts/transfer": "workspace:*",
+        "@nabi-ts/cli": "workspace:*",
         "@tailwindcss/vite": "^4.1.7",
         "@vueuse/core": "^13.2.0",
         "class-variance-authority": "^0.7.1",
@@ -35,13 +42,6 @@
         "@vitejs/plugin-vue": "^5.2.4",
         "vite": "^6.3.5",
         "vue": "^3.5.14",
-      },
-    },
-    "packages/transfer": {
-      "name": "@nabi-ts/transfer",
-      "version": "0.1.0",
-      "dependencies": {
-        "commander": "^14.0.0",
       },
     },
   },
@@ -130,9 +130,9 @@
 
     "@jridgewell/trace-mapping": ["@jridgewell/trace-mapping@0.3.25", "", { "dependencies": { "@jridgewell/resolve-uri": "^3.1.0", "@jridgewell/sourcemap-codec": "^1.4.14" } }, "sha512-vNk6aEwybGtawWmy/PzwnGDOjCkLWSD2wqvjGGAgOAwCGWySYXfYoxt00IJkTF+8Lb57DwOb3Aa0o9CApepiYQ=="],
 
-    "@nabi-ts/explorer": ["@nabi-ts/explorer@workspace:packages/explorer"],
+    "@nabi-ts/cli": ["@nabi-ts/cli@workspace:packages/cli"],
 
-    "@nabi-ts/transfer": ["@nabi-ts/transfer@workspace:packages/transfer"],
+    "@nabi-ts/explorer": ["@nabi-ts/explorer@workspace:packages/explorer"],
 
     "@noble/curves": ["@noble/curves@1.9.1", "", { "dependencies": { "@noble/hashes": "1.8.0" } }, "sha512-k11yZxZg+t+gWvBbIswW0yoJlu8cHOC7dhunwOzoWH/mXGBiYyR4YY6hAEK/3EUs4UpB8la1RfdRpeGsFHkWsA=="],
 

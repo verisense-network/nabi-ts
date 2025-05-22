@@ -14,7 +14,7 @@
     "vue": "^3.5.14"
   },
   "dependencies": {
-    "@nabi-ts/transfer": "workspace:*",
+    "@nabi-ts/cli": "workspace:*",
     "@tailwindcss/vite": "^4.1.7",
     "@vueuse/core": "^13.2.0",
     "class-variance-authority": "^0.7.1",

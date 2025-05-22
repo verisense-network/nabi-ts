@@ -34,4 +34,5 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 .DS_Store
 .placeholder
 
-packages/transfer/output
+packages/cli/output
+packages/cli/nucleus/target
