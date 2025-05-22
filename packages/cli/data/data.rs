@@ -2,6 +2,11 @@ use vrs_core_sdk::{
     codec::{Decode, Encode},
     export, get, init, post, storage,
 };
+mod quote;
+// use quote::T;
+
+#[export]
+type G<T> = Result<T, String>;
 
 #[derive(Debug, Decode, Encode)]
 #[export]
@@ -16,15 +21,6 @@ pub struct E {
 pub struct D {
     pub b: i32,
 }
-#[derive(Debug, Decode, Encode)]
-#[export]
-pub struct A {
-    pub b: B,
-    pub tuple_field: (u32, String),
-    pub array_field: [u8; 10],
-    pub slice_field: Vec<u64>,
-}
-
 #[derive(Debug, Decode, Encode)]
 #[export]
 pub struct B {
@@ -42,12 +38,16 @@ pub struct C {
 pub fn init() {}
 
 #[post]
-pub fn a(a: A) -> Result<(), String> {
+pub fn tv(_a: G<u32>) -> G<()> {
+    Ok(())
+}
+#[post]
+pub fn a(_a: A) -> Result<(), String> {
     Ok(())
 }
 
 #[post]
-pub fn bbb(a: (A, String)) -> Result<(), String> {
+pub fn bbb(_a: (A, String)) -> Result<(), String> {
     Ok(())
 }
 
@@ -93,4 +93,23 @@ pub fn should_not_call_put() -> Result<(), String> {
 pub fn should_call_put() -> Result<(), String> {
     let vec = vec![0u8; 65536 * 4];
     storage::put(b"bbbbbbbbbbbbbbbbbbbbb", &vec).map_err(|e| e.to_string())
+}
+
+#[derive(Debug, Decode, Encode)]
+#[export]
+pub struct A {
+    pub b: B,
+    pub tuple_field: (u32, String),
+    pub array_field: [u8; 10],
+    pub slice_field: Vec<u64>,
+    pub ggg: quote::T,
+}
+
+use vrs_core_sdk::codec::{Decode, Encode};
+use vrs_core_sdk::export;
+#[derive(Debug, Decode, Encode)]
+#[export]
+pub struct T {
+    pub a: u32,
+    pub b: u32,
 }

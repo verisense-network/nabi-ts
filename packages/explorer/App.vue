@@ -87,6 +87,7 @@ import JsonStructViewer from './components/JsonStructViewer.vue';
 import { Button } from '@/components/ui/button'
 import { Card, CardHeader, CardTitle, CardAction, CardContent } from '@/components/ui/card'
 import { generateCode } from '@nabi-ts/cli/src/generator.js'
+import testJson from '@nabi-ts/cli/data/data.json';
 
 const jsonInput = ref("");
 const tsOutput = ref("");
@@ -96,105 +97,7 @@ const parsedJsonData = ref(null);
 const showJsonPreview = ref(false);
 
 function loadExample() {
-  jsonInput.value = JSON.stringify(
-    [
-      {
-        "fields": [
-          {
-            "name": "a",
-            "type": {
-              "generic_args": [
-                {
-                  "generic_args": [],
-                  "kind": "Path",
-                  "path": [
-                    "u32"
-                  ]
-                }
-              ],
-              "kind": "Path",
-              "path": [
-                "Vec"
-              ]
-            }
-          },
-          {
-            "name": "b",
-            "type": {
-              "generic_args": [],
-              "kind": "Path",
-              "path": [
-                "i32"
-              ]
-            }
-          },
-          {
-            "name": "c",
-            "type": {
-              "generic_args": [],
-              "kind": "Path",
-              "path": [
-                "u32"
-              ]
-            }
-          }
-        ],
-        "name": "E",
-        "type": "struct"
-      },
-      {
-        "inputs": [
-          {
-            "name": "a",
-            "type": {
-              "generic_args": [],
-              "kind": "Path",
-              "path": [
-                "String"
-              ]
-            }
-          },
-          {
-            "name": "b",
-            "type": {
-              "generic_args": [],
-              "kind": "Path",
-              "path": [
-                "String"
-              ]
-            }
-          }
-        ],
-        "method": "post",
-        "name": "cc",
-        "output": {
-          "generic_args": [
-            {
-              "generic_args": [],
-              "kind": "Path",
-              "path": [
-                "String"
-              ]
-            },
-            {
-              "generic_args": [],
-              "kind": "Path",
-              "path": [
-                "String"
-              ]
-            }
-          ],
-          "kind": "Path",
-          "path": [
-            "Result"
-          ]
-        },
-        "type": "fn"
-      },
-    ],
-    null,
-    2
-  );
+  jsonInput.value = JSON.stringify(testJson, null, 2);
 }
 
 function handleFileSelect(event) {
