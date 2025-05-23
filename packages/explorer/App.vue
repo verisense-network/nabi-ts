@@ -1,8 +1,7 @@
 <template>
   <main>
     <header>
-      <h1>Nabi-TS Generator</h1>
-      <p>Convert JSON ABI to TypeScript code</p>
+      <p class="text-sm"><b class="text-lg">Nabi-TS Generator</b> Convert JSON ABI to TypeScript code</p>
     </header>
 
     <div class="container">
@@ -162,16 +161,12 @@ function closeJsonPreview() {
 <style>
 main {
   margin: 0 auto;
-  padding: 2rem;
+  padding: 1rem;
 }
 
 header {
   text-align: center;
-  margin-bottom: 2rem;
-}
-
-h1 {
-  margin-bottom: 0.5rem;
+  margin-bottom: 1rem;
 }
 
 .container {
