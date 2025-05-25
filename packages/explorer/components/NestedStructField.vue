@@ -1,7 +1,7 @@
 <template>
   <div class="nested-struct-field">
     <Label class="text-xs font-medium">
-      {{ field.name }} <span class="text-muted-foreground">({{ field.type }})</span>
+      {{ field.name }} <span class="text-muted-foreground">({{ field.type }})</span> isStruct {{ field.isStruct }}
     </Label>
 
     <!-- Nested Struct Field -->

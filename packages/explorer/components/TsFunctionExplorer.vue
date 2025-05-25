@@ -356,76 +356,16 @@ function processCodeString() {
     window.VecFixed = codecTypes.VecFixed;
     window.Tuple = codecTypes.Tuple;
     
-    // Register example structs for testing
-    registerTestStructs();
-    
     // Extract and define Polkadot codec classes
     extractedClasses.value = extractAndDefineClasses(code);
 
     // Extract all functions
     extractAllFunctions(code);
 
+    processReferencedStructs(extractedClasses.value);
   } catch (error) {
     console.error('Error parsing code:', error);
   }
-}
-
-// Register test structs for debugging
-function registerTestStructs() {
-  // Define struct B
-  const structB = {
-    name: 'B',
-    type: 'Struct',
-    formattedTypeDef: 'struct B { field1: U32, field2: Text }',
-    fields: [
-      { name: 'field1', type: 'U32', value: '', isVec: false, isTuple: false, isOption: false, isStruct: false },
-      { name: 'field2', type: 'Text', value: '', isVec: false, isTuple: false, isOption: false, isStruct: false }
-    ],
-    debugResult: ''
-  };
-  
-  // Define struct C
-  const structC = {
-    name: 'C',
-    type: 'Struct',
-    formattedTypeDef: 'struct C { value: U32 }',
-    fields: [
-      { name: 'value', type: 'U32', value: '', isVec: false, isTuple: false, isOption: false, isStruct: false }
-    ],
-    debugResult: ''
-  };
-  
-  // Define struct T
-  const structT = {
-    name: 'T',
-    type: 'Struct',
-    formattedTypeDef: 'struct T { data: Text }',
-    fields: [
-      { name: 'data', type: 'Text', value: '', isVec: false, isTuple: false, isOption: false, isStruct: false }
-    ],
-    debugResult: ''
-  };
-  
-  // Add structs to extractedClasses
-  extractedClasses.value.push(structB);
-  extractedClasses.value.push(structC);
-  extractedClasses.value.push(structT);
-  
-  // Define structs in global scope
-  window.B = codecTypes.Struct.with({
-    field1: 'U32',
-    field2: 'Text'
-  });
-  
-  window.C = codecTypes.Struct.with({
-    value: 'U32'
-  });
-  
-  window.T = codecTypes.Struct.with({
-    data: 'Text'
-  });
-  
-  console.log('Registered test structs: B, C, T');
 }
 
 // Extract and define classes, with special handling for Polkadot codec types
@@ -811,7 +751,10 @@ function formatStructTypeDef(typeDefObj, className) {
     formattedFields.push(`  ${fieldName}: ${fieldType}`);
 
     // Check if this is a reference to another struct using our improved detection
-    const referencedStruct = findReferencedStruct(fieldType);
+    // 延迟处理引用结构体，先记录字段类型，稍后在所有结构体生成后再处理嵌套结构
+    // 原代码: const referencedStruct = findReferencedStruct(fieldType);
+    const referencedStruct = null; // 暂时不查找引用结构体
+    console.log("referencedStruct", fieldType)
     
     console.log(`Field ${fieldName} with type ${fieldType} - referencedStruct:`, referencedStruct ? referencedStruct.name : 'undefined');
     
@@ -851,6 +794,8 @@ function formatStructTypeDef(typeDefObj, className) {
 
     debugFields.push(debugField);
   }
+
+  console.log("fields", className, debugFields)
 
   // Format as struct
   return {
@@ -1202,55 +1147,43 @@ function isArrayType(type) {
 
 // Check if a type is a Polkadot struct type and return the struct if found
 function findReferencedStruct(type) {
-  // Debug logging
-  console.log(`Searching for struct with type: ${type}`);
-  console.log(`Available structs:`, extractedClasses.value.map(c => c.name).join(', '));
+  // Skip checking for non-struct types
+  if (!type || typeof type !== 'string') return null;
   
   // Exclude tuple types which might be confused with structs
-  if (type.startsWith('(') && type.endsWith(')')) {
+  if (type.startsWith('(') && type.endsWith(')')) return null;
+  
+  // Exclude Vec, Option, and array types
+  if (type.startsWith('Vec<') || 
+      type.startsWith('Option<') || 
+      type.match(/\[.*?;.*?\]/)) {
     return null;
   }
   
-  // Exclude Vec and Option types
-  if (type.startsWith('Vec<') || type.startsWith('Option<')) {
-    return null;
-  }
+  // Clean the type name (remove any generic parameters)
+  const cleanType = type.split('<')[0].trim();
   
   // First try exact match (most reliable)
+  console.log("extractedClasses.value", extractedClasses.value)
   for (const cls of extractedClasses.value) {
-    if (cls.type === 'Struct' && type === cls.name) {
-      console.log(`Found exact struct match: ${cls.name}`);
+    if (cls.type === 'Struct' && (cleanType === cls.name || type === cls.name)) {
       return cls;
     }
   }
   
-  // If no exact match, try more flexible matching for qualified names
-  // e.g. 'namespace.StructName' or 'package::StructName'
+  // Try to match by name only (ignoring namespaces)
   for (const cls of extractedClasses.value) {
     if (cls.type === 'Struct') {
-      // Check if the type ends with the struct name with a separator
-      if (type.endsWith(`.${cls.name}`) || type.endsWith(`::${cls.name}`)) {
-        console.log(`Found qualified struct match: ${cls.name} in ${type}`);
-        return cls;
-      }
+      // Extract the last part of the type name (after the last dot or ::)
+      const typeParts = cleanType.split(/\.|::/);
+      const typeBaseName = typeParts[typeParts.length - 1];
       
-      // Check if the type starts with the struct name with a separator
-      if (type.startsWith(`${cls.name}.`) || type.startsWith(`${cls.name}::`)) {
-        console.log(`Found qualified struct match: ${cls.name} in ${type}`);
+      if (typeBaseName === cls.name) {
         return cls;
       }
     }
   }
   
-  // Case insensitive match as a last resort
-  for (const cls of extractedClasses.value) {
-    if (cls.type === 'Struct' && type.toLowerCase() === cls.name.toLowerCase()) {
-      console.log(`Found case-insensitive struct match: ${cls.name}`);
-      return cls;
-    }
-  }
-  
-  console.log(`No struct match found for: ${type}`);
   return null;
 }
 
@@ -1549,6 +1482,41 @@ function createOtherTypeInstance(index) {
   }
 }
 
+// 处理所有结构体中的嵌套引用，在所有结构体都已定义后调用
+function processReferencedStructs(extractedClasses) {
+  console.log('Processing referenced structs for all defined structures');
+  
+  // 遍历所有已提取的结构体
+  for (const cls of extractedClasses) {
+    if (cls.type === 'Struct' && cls.fields) {
+      console.log(`Processing nested references for struct: ${cls.name}`);
+      
+      // 为每个字段处理嵌套引用
+      for (const field of cls.fields) {
+        if (!field.type) continue;
+        
+        // 检查字段是否引用了其他结构体
+        const referencedStruct = findReferencedStruct(field.type);
+        if (referencedStruct) {
+          console.log(`Field ${field.name} references struct: ${referencedStruct.name}`);
+          
+          // 标记为结构体类型并设置嵌套字段
+          field.isStruct = true;
+          field.referencedStructName = referencedStruct.name;
+          
+          // 复制引用结构体的字段作为嵌套字段
+          if (referencedStruct.fields && referencedStruct.fields.length > 0) {
+            field.nestedFields = JSON.parse(JSON.stringify(referencedStruct.fields));
+            
+            // 递归处理更深层次的嵌套
+            processNestedFields(field.nestedFields);
+          }
+        }
+      }
+    }
+  }
+}
+
 // Process nested fields recursively to ensure proper type detection and initialization
 function processNestedFields(fields, depth = 0) {
   // Prevent infinite recursion
@@ -1557,26 +1525,99 @@ function processNestedFields(fields, depth = 0) {
   for (const field of fields) {
     console.log(`Processing field: ${field.name} with type: ${field.type}`);
     
+    // Ensure the field has all required properties
+    if (field.value === undefined) field.value = '';
+    
     // Detect field types
     field.isVec = isVecType(field.type);
     field.isTuple = isTupleType(field.type);
     field.isOption = isOptionType(field.type);
-    field.isStruct = isPolkadotStructType(field.type);
-
-    console.log(`field: ${field.name} isStruct: ${field.isStruct}`);
     
-    // Find the referenced struct if this is a struct field using our improved detection
-    let referencedStruct = null;
-    // Use our improved findReferencedStruct function
-    referencedStruct = findReferencedStruct(field.type);
+    // Check if this is a struct field
+    const referencedStruct = findReferencedStruct(field.type);
+    console.log("referencedStruct", field.type)
     
-    // Update isStruct based on whether we found a referenced struct
-    field.isStruct = referencedStruct !== null;
+    // Simple struct detection - if the type is a single word and starts with uppercase, it's likely a struct
+    // This is a fallback for when findReferencedStruct fails
+    const isLikelyStruct = /^[A-Z][a-zA-Z0-9_]*$/.test(field.type) && 
+                          !['U8', 'U16', 'U32', 'U64', 'U128', 'I8', 'I16', 'I32', 'I64', 'I128', 'Bool', 'Text'].includes(field.type);
+    
+    field.isStruct = referencedStruct !== null || isLikelyStruct;
+    
+    if (referencedStruct) {
+      console.log(`Found struct match: ${field.name} (${field.type}) -> ${referencedStruct.name}`);
+    } else if (isLikelyStruct) {
+      console.log(`Likely struct type: ${field.name} (${field.type}) but not found in extractedClasses`);
+    }
     
     if (field.isStruct) {
-      console.log(`Found struct match: ${field.name} (${field.type}) -> ${referencedStruct.name}`);
-    } else {
-      console.log(`Not a struct field: ${field.name} (${field.type})`);
+      if (referencedStruct) {
+        console.log(`Processing struct field: ${field.name} (${field.type}) -> ${referencedStruct.name}`);
+        field.referencedStructName = referencedStruct.name;
+      } else {
+        // Handle case where we think it's a struct but don't have the reference
+        console.log(`Processing likely struct field: ${field.name} (${field.type})`);
+        field.referencedStructName = field.type; // Use the type name as the referenced struct name
+      }
+      
+      // Process fields from the referenced struct
+      if (referencedStruct && referencedStruct.fields && referencedStruct.fields.length > 0) {
+        // Create a deep copy of the fields
+        field.nestedFields = JSON.parse(JSON.stringify(referencedStruct.fields));
+        console.log(`Copied ${field.nestedFields.length} fields from ${referencedStruct.name} for ${field.name}`);
+        
+        // Process each nested field to ensure it has all required properties
+        for (const nestedField of field.nestedFields) {
+          nestedField.value = nestedField.value || '';
+          nestedField.isVec = isVecType(nestedField.type);
+          nestedField.isTuple = isTupleType(nestedField.type);
+          nestedField.isOption = isOptionType(nestedField.type);
+          
+          // Initialize Vec fields
+          if (nestedField.isVec) {
+            nestedField.items = nestedField.items || [{ value: '' }];
+            
+            // Extract item type for Vec
+            if (nestedField.type.startsWith('Vec<')) {
+              const vecMatch = nestedField.type.match(/Vec<([^>]+)>/);
+              if (vecMatch && vecMatch[1]) {
+                nestedField.itemType = vecMatch[1].trim();
+              }
+            } else if (nestedField.type.match(/\[.*?;.*?\]/)) {
+              // Handle array notation [Type; Length]
+              const arrayMatch = nestedField.type.match(/\[([^;]+);\s*([^\]]+)\]/);
+              if (arrayMatch && arrayMatch[1]) {
+                nestedField.itemType = arrayMatch[1].trim();
+              }
+            }
+          }
+          
+          // Initialize Tuple fields
+          if (nestedField.isTuple) {
+            if (!nestedField.tupleItems || nestedField.tupleItems.length === 0) {
+              const tupleContent = nestedField.type.substring(1, nestedField.type.length - 1);
+              nestedField.tupleItems = tupleContent.split(',').map((t, index) => {
+                const type = t.trim();
+                return { type, value: '', index };
+              });
+            }
+          }
+          
+          // Initialize Option fields
+          if (nestedField.isOption) {
+            if (!nestedField.valueType) {
+              const optionMatch = nestedField.type.match(/Option<([^>]+)>/);
+              if (optionMatch && optionMatch[1]) {
+                nestedField.valueType = optionMatch[1].trim();
+              }
+            }
+            nestedField.hasValue = nestedField.hasValue || false;
+          }
+        }
+        
+        // Recursively process the nested fields
+        processNestedFields(field.nestedFields, depth + 1);
+      }
     }
     
     // Handle tuple fields
@@ -1613,21 +1654,7 @@ function processNestedFields(fields, depth = 0) {
       if (optionMatch && optionMatch[1]) {
         field.valueType = optionMatch[1].trim();
       }
-    }
-    
-    // Process struct fields
-    if (field.isStruct && referencedStruct) {
-      field.referencedStructName = referencedStruct.name;
-      
-      // Process fields from the referenced struct
-      if (referencedStruct.fields && referencedStruct.fields.length > 0) {
-        // Create a deep copy of the fields
-        field.nestedFields = JSON.parse(JSON.stringify(referencedStruct.fields));
-        console.log(`Copied ${field.nestedFields.length} fields from ${referencedStruct.name} for ${field.name}`);
-        
-        // Recursively process the nested fields
-        processNestedFields(field.nestedFields, depth + 1);
-      }
+      field.hasValue = field.hasValue || false;
     }
   }
 }
