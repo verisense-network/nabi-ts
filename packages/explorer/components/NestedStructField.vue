@@ -1,12 +1,11 @@
 <template>
   <div class="nested-struct-field">
     <Label class="text-xs font-medium">
-      {{ field.name }} <span class="text-muted-foreground">({{ field.type }})</span> isStruct {{ field.isStruct }}
+      {{ field.name }} <span class="text-muted-foreground">({{ field.type }})</span>
     </Label>
 
     <!-- Nested Struct Field -->
     <div v-if="field.isStruct" class="ml-4 mt-2 pl-2 border-l border-gray-200 space-y-2">
-      <div class="text-xs text-muted-foreground mb-2">{{ field.referencedStructName }} fields:</div>
       <div v-for="(nestedField, nestedIndex) in field.nestedFields" :key="nestedIndex" class="mb-3">
         <!-- Recursively render nested fields -->
         <NestedStructField :field="nestedField" />
