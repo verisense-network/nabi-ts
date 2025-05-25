@@ -35,22 +35,15 @@
           <CardHeader>
             <CardTitle>TypeScript Output</CardTitle>
             <CardAction class="space-x-2">
-              <Button @click="copyToClipboard">Copy to Clipboard</Button>
+              <Button @click="copyToClipboard">Copy</Button>
             </CardAction>
           </CardHeader>
           <CardContent class="px-4 font-mono">
             <div v-if="tsOutput" class="prose">
-              <div class="mb-4">
+              <div class="mb-4 border shadow rounded-md">
                 <pre class="whitespace-pre max-h-64 overflow-scroll">{{ tsOutput }}</pre>
               </div>
               <div class="mt-8 border-t pt-4">
-                <h3 class="text-lg font-medium mb-4">Structs</h3>
-              </div>
-              <div v-if="parsedJsonData" class="prose">
-                <JsonStructViewer :jsonData="parsedJsonData" />
-              </div>
-              <div class="mt-8 border-t pt-4">
-                <h3 class="text-lg font-medium mb-4">Functions</h3>
                 <TsFunctionExplorer :codeString="tsOutput" />
               </div>
             </div>

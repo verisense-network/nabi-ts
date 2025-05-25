@@ -1,6 +1,106 @@
 <template>
   <div class="ts-function-explorer">
-    <!-- API初始化面板 -->
+
+    <!-- Display extracted Polkadot codec classes if any -->
+    <div v-if="extractedClasses.length > 0" class="mb-6">
+      <Card>
+        <CardHeader>
+          <CardTitle>Polkadot Codec Types</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div class="grid grid-cols-1 gap-4">
+            <div v-for="(classInfo, index) in extractedClasses" :key="index" class="border rounded-md p-3 bg-muted/30">
+              <div class="flex justify-between items-center mb-2">
+                <h3 class="text-sm font-medium">{{ classInfo.name }} <span class="text-xs text-muted-foreground">({{
+                    classInfo.type }})</span></h3>
+                <Button variant="outline" size="sm" @click="toggleDebugMode(index)">
+                  {{ classInfo.debugMode ? 'Hide Debug' : 'Debug' }}
+                </Button>
+              </div>
+              <pre class="bg-muted p-2 rounded text-xs whitespace-pre-wrap">{{ classInfo.definition }}</pre>
+
+              <!-- Debug Interface -->
+              <div v-if="classInfo.debugMode" class="mt-4 border-t pt-3">
+                <h4 class="text-sm font-medium mb-2">Debug Interface</h4>
+
+                <!-- Struct Type Debug Interface -->
+                <div v-if="classInfo.type === 'Struct'" class="space-y-3">
+                  <div v-for="(field, fieldIndex) in classInfo.fields" :key="fieldIndex" class="ml-2 mb-4">
+                    <!-- Use the recursive NestedStructField component for all fields -->
+                    <NestedStructField :field="field" />
+                  </div>
+
+                  <Button variant="outline" size="sm" class="mt-3" @click="debugCodecType(index)">
+                    Debug
+                  </Button>
+
+                  <div v-if="classInfo.debugResult" class="mt-3">
+                    <Label class="text-xs">Debug Result:</Label>
+                    <pre
+                      class="bg-muted p-2 rounded text-xs mt-1 whitespace-pre-wrap">{{ classInfo.debugResult }}</pre>
+                  </div>
+                </div>
+
+                <!-- Enum Type Debug Interface -->
+                <div v-else-if="classInfo.type === 'Enum'" class="space-y-3">
+                  <div class="space-y-2">
+                    <Label class="text-xs">Variant</Label>
+                    <Select v-model="classInfo.selectedVariant">
+                      <SelectTrigger class="w-full">
+                        <SelectValue placeholder="Select a variant" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem v-for="(variant, variantIndex) in classInfo.variants" :key="variantIndex"
+                          :value="variant.name">
+                          {{ variant.name }}
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div v-if="getSelectedVariant(classInfo)?.hasValue" class="space-y-2 mt-3">
+                    <Label class="text-xs">Value <span class="text-muted-foreground">({{
+                      getSelectedVariant(classInfo)?.type }})</span></Label>
+                    <Input v-model="getSelectedVariant(classInfo).value"
+                      :placeholder="getPlaceholderForType(getSelectedVariant(classInfo)?.type)" class="h-8 w-full" />
+                  </div>
+
+                  <Button variant="outline" size="sm" class="mt-3" @click="createEnumInstance(index)">
+                    Create Instance
+                  </Button>
+
+                  <div v-if="classInfo.debugResult" class="mt-3">
+                    <Label class="text-xs">Instance:</Label>
+                    <pre
+                      class="bg-muted p-2 rounded text-xs mt-1 whitespace-pre-wrap">{{ classInfo.debugResult }}</pre>
+                  </div>
+                </div>
+
+                <!-- Other Types Debug Interface -->
+                <div v-else class="space-y-3">
+                  <div class="space-y-2">
+                    <Label class="text-xs">Value</Label>
+                    <Input v-model="classInfo.debugValue"
+                      :placeholder="getPlaceholderForType(classInfo.valueType || 'string')" class="h-8 w-full" />
+                  </div>
+
+                  <Button variant="outline" size="sm" class="mt-3" @click="createOtherTypeInstance(index)">
+                    Create Instance
+                  </Button>
+
+                  <div v-if="classInfo.debugResult" class="mt-3">
+                    <Label class="text-xs">Instance:</Label>
+                    <pre
+                      class="bg-muted p-2 rounded text-xs mt-1 whitespace-pre-wrap">{{ classInfo.debugResult }}</pre>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+
     <Card class="api-init-panel mb-6">
       <CardHeader>
         <div class="flex justify-between items-center">
@@ -108,16 +208,20 @@
 </template>
 
 <script setup>
-import { ref, watch } from 'vue';
+import { ref, watch, computed } from 'vue';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
-import * as codecTypes from '@polkadot/types-codec';
-import { ApiPromise, HttpProvider } from '@polkadot/api';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { TypeRegistry } from '@polkadot/types';
+import * as codecTypes from '@polkadot/types-codec';
 import { transform } from 'sucrase';
+import { ApiPromise, HttpProvider } from '@polkadot/api';
+import { XIcon } from 'lucide-vue-next';
+import NestedStructField from './NestedStructField.vue';
 
 const props = defineProps({
   codeString: {
@@ -126,12 +230,11 @@ const props = defineProps({
   }
 });
 
-const functions = ref([]);
-
-const apiEndpoint = ref('http://localhost:9944');
-const nucleusId = ref('');
+const apiEndpoint = ref('http://127.0.0.1:9944');
 const apiInitialized = ref(false);
 const apiInitializing = ref(false);
+const functions = ref([]);
+const extractedClasses = ref([]);
 const apiError = ref('');
 const api = ref(null);
 const apiModule = ref(null);
@@ -157,7 +260,7 @@ async function initializeApi() {
     };
 
     window[apiNamespace].initApi = async function (endpoint) {
-      console.log(`[实际连接] 使用端点初始化API: ${endpoint}`);
+      console.log(`connect to API: ${endpoint}`);
       const provider = new HttpProvider(endpoint);
       return await ApiPromise.create({
         provider,
@@ -225,10 +328,12 @@ async function initializeApi() {
 function processCodeString() {
   try {
     functions.value = [];
+    extractedClasses.value = [];
 
     const code = props.codeString;
     if (!code || typeof code !== 'string') return;
 
+    // Define codec types in the global scope
     window.Text = codecTypes.Text;
     window.U8 = codecTypes.U8;
     window.U16 = codecTypes.U16;
@@ -240,6 +345,7 @@ function processCodeString() {
     window.I32 = codecTypes.I32;
     window.I64 = codecTypes.I64;
     window.I128 = codecTypes.I128;
+
     window.Bool = codecTypes.Bool;
     window.Bytes = codecTypes.Bytes;
     window.Null = codecTypes.Null;
@@ -249,8 +355,14 @@ function processCodeString() {
     window.Vec = codecTypes.Vec;
     window.VecFixed = codecTypes.VecFixed;
     window.Tuple = codecTypes.Tuple;
+    
+    // Register example structs for testing
+    registerTestStructs();
+    
+    // Extract and define Polkadot codec classes
+    extractedClasses.value = extractAndDefineClasses(code);
 
-    extractAndDefineClasses(code);
+    // Extract all functions
     extractAllFunctions(code);
 
   } catch (error) {
@@ -258,65 +370,599 @@ function processCodeString() {
   }
 }
 
-// New function to extract and define classes
+// Register test structs for debugging
+function registerTestStructs() {
+  // Define struct B
+  const structB = {
+    name: 'B',
+    type: 'Struct',
+    formattedTypeDef: 'struct B { field1: U32, field2: Text }',
+    fields: [
+      { name: 'field1', type: 'U32', value: '', isVec: false, isTuple: false, isOption: false, isStruct: false },
+      { name: 'field2', type: 'Text', value: '', isVec: false, isTuple: false, isOption: false, isStruct: false }
+    ],
+    debugResult: ''
+  };
+  
+  // Define struct C
+  const structC = {
+    name: 'C',
+    type: 'Struct',
+    formattedTypeDef: 'struct C { value: U32 }',
+    fields: [
+      { name: 'value', type: 'U32', value: '', isVec: false, isTuple: false, isOption: false, isStruct: false }
+    ],
+    debugResult: ''
+  };
+  
+  // Define struct T
+  const structT = {
+    name: 'T',
+    type: 'Struct',
+    formattedTypeDef: 'struct T { data: Text }',
+    fields: [
+      { name: 'data', type: 'Text', value: '', isVec: false, isTuple: false, isOption: false, isStruct: false }
+    ],
+    debugResult: ''
+  };
+  
+  // Add structs to extractedClasses
+  extractedClasses.value.push(structB);
+  extractedClasses.value.push(structC);
+  extractedClasses.value.push(structT);
+  
+  // Define structs in global scope
+  window.B = codecTypes.Struct.with({
+    field1: 'U32',
+    field2: 'Text'
+  });
+  
+  window.C = codecTypes.Struct.with({
+    value: 'U32'
+  });
+  
+  window.T = codecTypes.Struct.with({
+    data: 'Text'
+  });
+  
+  console.log('Registered test structs: B, C, T');
+}
+
+// Extract and define classes, with special handling for Polkadot codec types
 function extractAndDefineClasses(code) {
-  if (!code || typeof code !== 'string') return;
+  if (!code || typeof code !== 'string') return [];
 
   console.log('Attempting to extract and define classes...');
-  const classRegex = /\bexport\s+class\s+([a-zA-Z_$][a-zA-Z0-9_$]*)(?:\s+extends\s+[^<{]+)?(?:\s+implements\s+[^<{]+)?\s*{/g;
+  const extractedClasses = [];
+  
+  // Extract standalone struct definitions (struct A { ... })
+  extractStructDefinitions(code, extractedClasses);
+  
+  // Extract class definitions (export class A extends Struct { ... })
+  extractClassDefinitions(code, extractedClasses);
+  
+  return extractedClasses;
+}
+
+// Extract standalone struct definitions
+function extractStructDefinitions(code, extractedClasses) {
+  const structRegex = /\bstruct\s+([a-zA-Z_$][a-zA-Z0-9_$]*)\s*{([^}]*)}/g;
+  let structMatch;
+  
+  while ((structMatch = structRegex.exec(code)) !== null) {
+    const structName = structMatch[1];
+    const structContent = structMatch[2];
+    console.log(`Found struct definition: ${structName}`);
+    
+    // Parse the struct fields
+    const fields = parseStructFields(structContent);
+    
+    // Add the struct to extractedClasses
+    extractedClasses.push({
+      name: structName,
+      type: 'Struct',
+      formattedTypeDef: `struct ${structName} { ... }`,
+      fields: fields,
+      debugResult: ''
+    });
+    
+    // Define the struct in the global scope
+    defineStructInGlobalScope(structName, fields);
+  }
+}
+
+// Parse struct fields from struct content
+function parseStructFields(structContent) {
+  const fields = [];
+  const fieldRegex = /\s*([a-zA-Z_$][a-zA-Z0-9_$]*)\s*:\s*([^;\n]+)/g;
+  let fieldMatch;
+  
+  while ((fieldMatch = fieldRegex.exec(structContent)) !== null) {
+    const fieldName = fieldMatch[1];
+    const fieldType = fieldMatch[2].trim();
+    console.log(`  Field: ${fieldName}: ${fieldType}`);
+    
+    fields.push({
+      name: fieldName,
+      type: fieldType,
+      value: '',
+      isVec: isVecType(fieldType),
+      isTuple: isTupleType(fieldType),
+      isOption: isOptionType(fieldType),
+      isStruct: false // Will be updated later during processing
+    });
+  }
+  
+  return fields;
+}
+
+// Define a struct in the global scope
+function defineStructInGlobalScope(structName, fields) {
+  window[structName] = codecTypes.Struct.with(fields.reduce((acc, field) => {
+    acc[field.name] = field.type;
+    return acc;
+  }, {}));
+  
+  console.log(`Defined struct ${structName} in global scope`);
+}
+
+// Extract class definitions
+function extractClassDefinitions(code, extractedClasses) {
+  const classRegex = /\bexport\s+class\s+([a-zA-Z_$][a-zA-Z0-9_$]*)(?:\s+extends\s+([a-zA-Z_$][a-zA-Z0-9_$]*))?(?:\s+implements\s+[^<{]+)?\s*{/g;
   let match;
 
   while ((match = classRegex.exec(code)) !== null) {
     const className = match[1];
+    const extendsClass = match[2] || null;
     const startIndex = match.index;
-    let openBraces = 1;
-    let endIndex = -1;
-
-    // Find the end of the class definition by matching braces
-    // Start searching from after the opening brace of the class
-    let searchStartIndex = code.indexOf('{', startIndex) + 1;
-    if (searchStartIndex === 0) { 
-        console.error(`Could not find opening brace for class ${className} after index ${startIndex}`);
-        continue;
-    }
-
-    for (let i = searchStartIndex; i < code.length; i++) {
-      if (code[i] === '{') {
-        openBraces++;
-      } else if (code[i] === '}') {
-        openBraces--;
-        if (openBraces === 0) {
-          endIndex = i + 1; 
-          break;
-        }
-      }
-    }
-
+    
+    // Find the end of the class definition
+    const endIndex = findClassEndIndex(code, startIndex);
     if (endIndex === -1) {
       console.error(`Could not find the end of class definition for: ${className}`);
       continue;
     }
 
     const classTSCode = code.substring(startIndex, endIndex);
+    defineClassInGlobalScope(className, classTSCode, extendsClass, extractedClasses);
+  }
+}
 
-    try {
-      let jsCode = transform(classTSCode, { transforms: ['typescript'] }).code;
-      
-      // Remove 'export' from the transformed JS code before eval, 
-      // as 'export' is not valid in a direct eval script context.
-      jsCode = jsCode.replace(/^\s*export\s+/, '');
+// Find the end index of a class definition
+function findClassEndIndex(code, startIndex) {
+  let openBraces = 1;
+  let endIndex = -1;
+  
+  // Start searching from after the opening brace of the class
+  let searchStartIndex = code.indexOf('{', startIndex) + 1;
+  if (searchStartIndex === 0) {
+    return -1;
+  }
 
-      // Use window[className] = ... to ensure the class is defined in the global scope
-      // This creates a global variable with the class name that holds the class definition
-      const globalDefCode = `window['${className}'] = ${jsCode}`;
-      eval(globalDefCode);
-
-      console.log(`Successfully defined class: ${className} in global scope`);
-    } catch (error) {
-      console.error(`Error processing or defining class ${className}:`, error);
-      console.error(`Problematic TS Code for ${className}:\n${classTSCode}`);
+  for (let i = searchStartIndex; i < code.length; i++) {
+    if (code[i] === '{') {
+      openBraces++;
+    } else if (code[i] === '}') {
+      openBraces--;
+      if (openBraces === 0) {
+        endIndex = i + 1;
+        break;
+      }
     }
   }
+  
+  return endIndex;
+}
+
+// Define a class in the global scope
+function defineClassInGlobalScope(className, classTSCode, extendsClass, extractedClasses) {
+  try {
+    let jsCode = transform(classTSCode, { transforms: ['typescript'] }).code;
+
+    // Remove 'export' from the transformed JS code before eval
+    jsCode = jsCode.replace(/^\s*export\s+/, '');
+
+    // Define the class in the global scope
+    const globalDefCode = `window['${className}'] = ${jsCode}`;
+    eval(globalDefCode);
+
+    // Extract Polkadot codec type information for Struct, Enum, etc.
+    const structInfo = extractPolkadotTypeInfo(classTSCode, className, extendsClass);
+    if (structInfo) {
+      extractedClasses.push(structInfo);
+    }
+
+    console.log(`Successfully defined class: ${className} in global scope`);
+  } catch (error) {
+    console.error(`Error processing or defining class ${className}:`, error);
+    console.error(`Problematic TS Code for ${className}:\n${classTSCode}`);
+  }
+}
+
+// Helper function to extract Polkadot codec type information
+function extractPolkadotTypeInfo(classCode, className, extendsClass) {
+  // Only process classes that extend known Polkadot codec types
+  const polkadotTypes = ['Struct', 'Enum', 'Vec', 'Tuple', 'Compact', 'Option'];
+  if (!extendsClass || !polkadotTypes.includes(extendsClass)) {
+    return null;
+  }
+
+  console.log(`Extracting type info for class ${className} extends ${extendsClass}`);
+
+  // Extract constructor with type definitions
+  // Using a more robust regex that can handle nested braces in the type definition object
+  const constructorRegex = /constructor\s*\([^)]*\)\s*{\s*super\s*\([^,]*,\s*({(?:[^{}]*|\{[^{}]*\})*})(?:,\s*[^)]*)\)\s*;/;
+  const match = classCode.match(constructorRegex);
+
+  if (!match || !match[1]) {
+    console.log(`No constructor match found for ${className}`);
+    return null;
+  }
+
+  const typeDefObj = match[1];
+  console.log(`Found type definition for ${className}:`, typeDefObj);
+
+  // Format the type definition for display
+  let formattedTypeDef = '';
+  let debugFields = [];
+  let debugVariants = [];
+  let valueType = null;
+
+  if (extendsClass === 'Struct') {
+    const result = formatStructTypeDef(typeDefObj, className);
+    formattedTypeDef = result.formattedTypeDef;
+    debugFields = result.fields;
+  } else if (extendsClass === 'Enum') {
+    const result = formatEnumTypeDef(typeDefObj, className);
+    formattedTypeDef = result.formattedTypeDef;
+    debugVariants = result.variants;
+  } else if (extendsClass === 'Vec') {
+    // Extract the Vec item type
+    const vecTypeMatch = typeDefObj.match(/([A-Za-z0-9_]+)/);
+    if (vecTypeMatch) {
+      valueType = vecTypeMatch[1];
+      formattedTypeDef = `Vec<${valueType}>`;
+    } else {
+      formattedTypeDef = `Vec<${className}>`;
+    }
+  } else if (extendsClass === 'Option') {
+    // Extract the Option value type
+    const optionTypeMatch = typeDefObj.match(/([A-Za-z0-9_]+)/);
+    if (optionTypeMatch) {
+      valueType = optionTypeMatch[1];
+      formattedTypeDef = `Option<${valueType}>`;
+    } else {
+      formattedTypeDef = `Option<${className}>`;
+    }
+  } else {
+    // Basic formatting for other types
+    formattedTypeDef = `${extendsClass}<${className}> ${typeDefObj.replace(/[{\s}]/g, ' ').trim()}`;
+  }
+
+  console.log(`Formatted type definition for ${className}:`, formattedTypeDef);
+
+  return {
+    name: className,
+    type: extendsClass,
+    definition: formattedTypeDef,
+    debugMode: false,
+    fields: debugFields,
+    variants: debugVariants,
+    valueType: valueType,
+    debugValue: '',
+    selectedVariant: debugVariants.length > 0 ? debugVariants[0].name : null,
+    debugResult: null
+  };
+}
+
+// Format Struct type definitions
+function formatStructTypeDef(typeDefObj, className) {
+  // Clean up the object string and extract field definitions
+  const cleanedObj = typeDefObj.replace(/[\s\n]+/g, ' ').trim();
+  console.log(`Cleaned object for ${className}:`, cleanedObj);
+
+  // Parse the object into fields and values, handling nested structures
+  const fields = parseObjectFields(cleanedObj);
+  const formattedFields = [];
+  const debugFields = [];
+
+  for (const field of fields) {
+    let fieldName = field.name;
+    let fieldType = field.value;
+    let itemType = null;
+    let tupleTypes = [];
+    let isVec = false;
+    let isTuple = false;
+    let isOption = false;
+    let isStruct = false;
+    let nestedFields = [];
+
+    console.log(`Processing field ${fieldName} with type ${fieldType}`);
+
+    // Handle Vec.with() syntax
+    if (fieldType.includes('Vec.with')) {
+      isVec = true;
+      const oldType = fieldType;
+      const vecTypeMatch = fieldType.match(/Vec\.with\(([^)]+)\)/);
+      if (vecTypeMatch && vecTypeMatch[1]) {
+        itemType = vecTypeMatch[1].trim();
+      }
+      fieldType = fieldType.replace(/Vec\.with\(([^)]+)\)/, 'Vec<$1>');
+      console.log(`Converted Vec type from ${oldType} to ${fieldType}, item type: ${itemType}`);
+    }
+
+    // Handle Tuple.with() syntax
+    if (fieldType.includes('Tuple.with')) {
+      isTuple = true;
+      console.log(`Processing Tuple.with pattern: ${fieldType}`);
+
+      if (fieldType.includes('Tuple.with([') && fieldType.includes('])')) {
+        // Extract the content between the square brackets
+        const startIdx = fieldType.indexOf('Tuple.with([') + 'Tuple.with(['.length;
+        const endIdx = fieldType.lastIndexOf('])');
+
+        if (startIdx > 0 && endIdx > startIdx) {
+          const tupleContent = fieldType.substring(startIdx, endIdx);
+          console.log('Extracted tuple content:', tupleContent);
+
+          // Split by comma and trim each type
+          tupleTypes = tupleContent.split(',').map((t, index) => {
+            const type = t.trim();
+            return { type, value: '', index };
+          });
+          console.log('Tuple types:', tupleTypes);
+
+          fieldType = `(${tupleTypes.map(t => t.type).join(', ')})`;
+          console.log(`Converted Tuple type to ${fieldType}`);
+        }
+      }
+    }
+    // Handle standard tuple notation (Type1, Type2)
+    else if (fieldType.startsWith('(') && fieldType.endsWith(')')) {
+      isTuple = true;
+      console.log(`Processing standard tuple notation: ${fieldType}`);
+      
+      // Extract the content between the parentheses
+      const tupleContent = fieldType.substring(1, fieldType.length - 1);
+      console.log('Extracted tuple content:', tupleContent);
+      
+      // Split by comma and trim each type
+      tupleTypes = tupleContent.split(',').map((t, index) => {
+        const type = t.trim();
+        return { type, value: '', index };
+      });
+      console.log('Tuple types:', tupleTypes);
+    }
+
+    // Handle Option type
+    if (fieldType.includes('Option<') || fieldType.includes('Option.with')) {
+      isOption = true;
+      let optionValueType = '';
+
+      if (fieldType.includes('Option<')) {
+        const optionMatch = fieldType.match(/Option<([^>]+)>/);
+        if (optionMatch && optionMatch[1]) {
+          optionValueType = optionMatch[1].trim();
+        }
+      } else if (fieldType.includes('Option.with')) {
+        const optionMatch = fieldType.match(/Option\.with\(([^)]+)\)/);
+        if (optionMatch && optionMatch[1]) {
+          optionValueType = optionMatch[1].trim();
+          fieldType = `Option<${optionValueType}>`;
+        }
+      }
+
+      console.log(`Processed Option type: ${fieldType}, value type: ${optionValueType}`);
+    }
+
+    // Handle VecFixed.with() syntax
+    if (fieldType.includes('VecFixed.with')) {
+      console.log(`Processing VecFixed.with pattern: ${fieldType}`);
+
+      // Try direct string extraction approach for VecFixed.with(Type, length)
+      if (fieldType.includes('VecFixed.with(')) {
+        // Extract the type and length using string operations
+        const startIdx = fieldType.indexOf('VecFixed.with(') + 'VecFixed.with('.length;
+
+        // Find the comma between type and length
+        let commaIdx = -1;
+        let parenDepth = 0;
+        for (let i = startIdx; i < fieldType.length; i++) {
+          if (fieldType[i] === '(') parenDepth++;
+          else if (fieldType[i] === ')') parenDepth--;
+          else if (fieldType[i] === ',' && parenDepth === 0) {
+            commaIdx = i;
+            break;
+          }
+        }
+
+        if (commaIdx > startIdx) {
+          const type = fieldType.substring(startIdx, commaIdx).trim();
+          itemType = type;
+          isVec = true;
+
+          // Try to find the closing parenthesis
+          const endIdx = fieldType.indexOf(')', commaIdx);
+          if (endIdx > commaIdx) {
+            const length = fieldType.substring(commaIdx + 1, endIdx).trim();
+            fieldType = `[${type}; ${length}]`;
+            console.log(`Converted VecFixed type to ${fieldType} using string extraction`);
+          } else {
+            // Handle incomplete expression - use what we have
+            const lengthPart = fieldType.substring(commaIdx + 1).trim();
+            const length = lengthPart.replace(/[^0-9]/g, '');
+            fieldType = `[${type}; ${length || 'N'}]`;
+            console.log(`Converted incomplete VecFixed type to ${fieldType}`);
+          }
+        } else {
+          // No comma found, just extract the type
+          const endIdx = fieldType.indexOf(')', startIdx);
+          const type = endIdx > startIdx
+            ? fieldType.substring(startIdx, endIdx).trim()
+            : fieldType.substring(startIdx).trim();
+          itemType = type;
+          isVec = true;
+          fieldType = `[${type}; N]`;
+          console.log(`Converted partial VecFixed type to ${fieldType}`);
+        }
+      }
+    }
+
+    formattedFields.push(`  ${fieldName}: ${fieldType}`);
+
+    // Check if this is a reference to another struct using our improved detection
+    const referencedStruct = findReferencedStruct(fieldType);
+    
+    console.log(`Field ${fieldName} with type ${fieldType} - referencedStruct:`, referencedStruct ? referencedStruct.name : 'undefined');
+    
+    if (referencedStruct) {
+      isStruct = true;
+      console.log(`Field ${fieldName} references struct ${referencedStruct.name}`);
+      
+      // Process the fields from the referenced struct
+      if (referencedStruct.fields && referencedStruct.fields.length > 0) {
+        // Create a deep copy of the fields
+        nestedFields = JSON.parse(JSON.stringify(referencedStruct.fields));
+        
+        // Process each nested field to ensure proper type detection
+        processNestedFields(nestedFields);
+        
+        console.log(`Processed ${nestedFields.length} fields from ${referencedStruct.name}`);
+      }
+    }
+    
+    // Create debug field object
+    const debugField = {
+      name: fieldName,
+      type: fieldType,
+      value: '',
+      isVec,
+      isTuple,
+      isOption,
+      isStruct,
+      itemType,
+      tupleItems: tupleTypes,
+      nestedFields,
+      hasValue: false,
+      valueType: isOption ? fieldType.match(/Option<([^>]+)>/)?.[1] || '' : '',
+      items: isVec ? [{ value: '' }] : [],
+      referencedStructName: isStruct ? referencedStruct?.name : null
+    };
+
+    debugFields.push(debugField);
+  }
+
+  // Format as struct
+  return {
+    formattedTypeDef: `struct ${className} {
+${formattedFields.join('\n')}
+}`,
+    fields: debugFields
+  };
+}
+
+// Helper function to parse object fields, handling nested structures
+function parseObjectFields(objStr) {
+  // Remove the outer braces
+  const content = objStr.trim();
+  const innerContent = content.startsWith('{') && content.endsWith('}')
+    ? content.slice(1, -1).trim()
+    : content;
+
+  const fields = [];
+  let currentPos = 0;
+  let currentField = null;
+  let bracketDepth = 0;
+  let parenDepth = 0;
+  let inQuotes = false;
+
+  console.log('Parsing object fields for:', innerContent);
+
+  for (let i = 0; i < innerContent.length; i++) {
+    const char = innerContent[i];
+
+    // Handle quotes
+    if (char === '"' || char === "'") {
+      inQuotes = !inQuotes;
+      continue;
+    }
+
+    if (inQuotes) continue;
+
+    // Track bracket and parenthesis depth
+    if (char === '[' || char === '{') {
+      bracketDepth++;
+    } else if (char === ']' || char === '}') {
+      bracketDepth--;
+    } else if (char === '(') {
+      parenDepth++;
+    } else if (char === ')') {
+      parenDepth--;
+    }
+
+    // Only process field separators at the top level (no nesting)
+    const isTopLevel = bracketDepth === 0 && parenDepth === 0;
+
+    if (isTopLevel) {
+      if (char === ':' && !currentField) {
+        // Found field name
+        const fieldName = innerContent.substring(currentPos, i).trim();
+        currentField = { name: fieldName, valueStart: i + 1 };
+        console.log(`Found field name: ${fieldName} at position ${i}`);
+      } else if (char === ',' && currentField) {
+        // Found end of field value
+        const fieldValue = innerContent.substring(currentField.valueStart, i).trim();
+        console.log(`Found field value for ${currentField.name}: ${fieldValue}`);
+        fields.push({ name: currentField.name, value: fieldValue });
+        currentField = null;
+        currentPos = i + 1;
+      }
+    }
+  }
+
+  // Handle the last field if there's no trailing comma
+  if (currentField) {
+    const fieldValue = innerContent.substring(currentField.valueStart).trim();
+    console.log(`Found last field value for ${currentField.name}: ${fieldValue}`);
+    fields.push({ name: currentField.name, value: fieldValue });
+  }
+
+  console.log('Parsed fields:', fields);
+  return fields;
+}
+
+// Format Enum type definitions
+function formatEnumTypeDef(typeDefObj, className) {
+  // Clean up the object string
+  const cleanedObj = typeDefObj.replace(/[\s\n]+/g, ' ').trim();
+
+  // Extract variants
+  const variantRegex = /([a-zA-Z_$][a-zA-Z0-9_$]*)\s*:\s*([^,}]+)/g;
+  let variantMatch;
+  let formattedVariants = [];
+  let debugVariants = [];
+
+  while ((variantMatch = variantRegex.exec(cleanedObj)) !== null) {
+    const variantName = variantMatch[1].trim();
+    const variantType = variantMatch[2].trim();
+    formattedVariants.push(`  ${variantName}${variantType !== 'null' ? `: ${variantType}` : ''}`);
+
+    // Create debug variant object
+    debugVariants.push({
+      name: variantName,
+      type: variantType !== 'null' ? variantType : null,
+      hasValue: variantType !== 'null',
+      value: ''
+    });
+  }
+
+  // Format as enum
+  return {
+    formattedTypeDef: `enum ${className} {
+${formattedVariants.join(',\n')}
+}`,
+    variants: debugVariants
+  };
 }
 
 function extractAllFunctions(code) {
@@ -554,22 +1200,468 @@ function isArrayType(type) {
   return type === 'array';
 }
 
+// Check if a type is a Polkadot struct type and return the struct if found
+function findReferencedStruct(type) {
+  // Debug logging
+  console.log(`Searching for struct with type: ${type}`);
+  console.log(`Available structs:`, extractedClasses.value.map(c => c.name).join(', '));
+  
+  // Exclude tuple types which might be confused with structs
+  if (type.startsWith('(') && type.endsWith(')')) {
+    return null;
+  }
+  
+  // Exclude Vec and Option types
+  if (type.startsWith('Vec<') || type.startsWith('Option<')) {
+    return null;
+  }
+  
+  // First try exact match (most reliable)
+  for (const cls of extractedClasses.value) {
+    if (cls.type === 'Struct' && type === cls.name) {
+      console.log(`Found exact struct match: ${cls.name}`);
+      return cls;
+    }
+  }
+  
+  // If no exact match, try more flexible matching for qualified names
+  // e.g. 'namespace.StructName' or 'package::StructName'
+  for (const cls of extractedClasses.value) {
+    if (cls.type === 'Struct') {
+      // Check if the type ends with the struct name with a separator
+      if (type.endsWith(`.${cls.name}`) || type.endsWith(`::${cls.name}`)) {
+        console.log(`Found qualified struct match: ${cls.name} in ${type}`);
+        return cls;
+      }
+      
+      // Check if the type starts with the struct name with a separator
+      if (type.startsWith(`${cls.name}.`) || type.startsWith(`${cls.name}::`)) {
+        console.log(`Found qualified struct match: ${cls.name} in ${type}`);
+        return cls;
+      }
+    }
+  }
+  
+  // Case insensitive match as a last resort
+  for (const cls of extractedClasses.value) {
+    if (cls.type === 'Struct' && type.toLowerCase() === cls.name.toLowerCase()) {
+      console.log(`Found case-insensitive struct match: ${cls.name}`);
+      return cls;
+    }
+  }
+  
+  console.log(`No struct match found for: ${type}`);
+  return null;
+}
+
+// Check if a type is a Polkadot struct type
+function isPolkadotStructType(type) {
+  return findReferencedStruct(type) !== null;
+}
+
+// Check if type is a Vec type
+function isVecType(type) {
+  return type.startsWith('Vec<') || type.match(/\[.*?;.*?\]/);
+}
+
+// Check if type is a Tuple type
+function isTupleType(type) {
+  console.log("type", type)
+  return type.startsWith('(') && type.endsWith(')');
+}
+
+// Check if type is an Option type
+function isOptionType(type) {
+  return type.startsWith('Option<');
+}
+
 // Get placeholder based on type
 function getPlaceholder(type) {
   switch (type) {
-    case 'string':
-      return 'Text...';
     case 'number':
       return '0';
     case 'boolean':
       return 'true/false';
+    case 'string':
+      return 'text...';
     case 'object':
       return '{}';
     case 'array':
       return '[]';
     default:
-      return type;
+      return '';
   }
+}
+
+// Get placeholder for Polkadot type
+function getPlaceholderForType(type) {
+  if (!type) return '';
+
+  if (type.includes('u8') || type.includes('u16') || type.includes('u32') ||
+    type.includes('u64') || type.includes('u128') || type.includes('i8') ||
+    type.includes('i16') || type.includes('i32') || type.includes('i64') ||
+    type.includes('i128')) {
+    return '0';
+  } else if (type.includes('bool')) {
+    return 'true/false';
+  } else if (type.includes('str') || type.includes('String') || type.includes('Text')) {
+    return 'text...';
+  } else if (type.includes('Vec<') || type.match(/\[.*?;.*?\]/)) {
+    return '[]';
+  } else if (type.includes('Compact')) {
+    return '0';
+  } else if (type.includes('Option')) {
+    return 'value...';
+  } else if (type.includes('Tuple') || (type.startsWith('(') && type.endsWith(')'))) {
+    return '(...)';
+  } else if (type.includes('H256') || type.includes('Hash')) {
+    return '0x...';
+  } else if (type.includes('AccountId')) {
+    return '5...';
+  } else if (type.includes('Balance')) {
+    return '1000000000000';
+  } else {
+    return 'value...';
+  }
+}
+
+// Toggle debug mode for a class
+function toggleDebugMode(index) {
+  const classInfo = extractedClasses.value[index];
+  if (classInfo) {
+    classInfo.debugMode = !classInfo.debugMode;
+  }
+}
+
+// Get selected variant for an enum
+function getSelectedVariant(classInfo) {
+  if (!classInfo || !classInfo.variants || classInfo.variants.length === 0) {
+    return null;
+  }
+
+  return classInfo.variants.find(v => v.name === classInfo.selectedVariant) || classInfo.variants[0];
+}
+
+// Add item to Vec field
+function addVecItem(field) {
+  if (field && field.items) {
+    field.items.push({ value: '' });
+  }
+}
+
+// Remove item from Vec field
+function removeVecItem(field, index) {
+  if (field && field.items && index >= 0 && index < field.items.length) {
+    field.items.splice(index, 1);
+    // Ensure there's always at least one item
+    if (field.items.length === 0) {
+      field.items.push({ value: '' });
+    }
+  }
+}
+
+// Create instance of a Struct type
+function debugCodecType(index) {
+  const classInfo = extractedClasses.value[index];
+  if (!classInfo || classInfo.type !== 'Struct') return;
+
+  try {
+    // Get the class constructor
+    const ClassConstructor = window[classInfo.name];
+    if (!ClassConstructor) {
+      classInfo.debugResult = `Error: Class ${classInfo.name} not found in global scope`;
+      return;
+    }
+
+    // Prepare field values
+    const fieldValues = {};
+
+    for (const field of classInfo.fields) {
+      if (field.isVec) {
+        // Handle Vec fields
+        fieldValues[field.name] = field.items.map(item => {
+          return convertValueToPolkadotType(item.value, field.itemType);
+        });
+      } else if (field.isTuple) {
+        // Handle Tuple fields
+        const tupleValues = field.tupleItems.map(item => {
+          return convertValueToPolkadotType(item.value, item.type);
+        });
+        fieldValues[field.name] = tupleValues;
+      } else if (field.isOption) {
+        // Handle Option fields
+        if (field.hasValue) {
+          fieldValues[field.name] = convertValueToPolkadotType(field.value, field.valueType);
+        } else {
+          fieldValues[field.name] = null;
+        }
+      } else if (field.isStruct) {
+        // Handle nested struct fields
+        const nestedValues = {};
+        
+        for (const nestedField of field.nestedFields) {
+          if (nestedField.isVec) {
+            // Handle nested Vec fields
+            nestedValues[nestedField.name] = nestedField.items.map(item => {
+              return convertValueToPolkadotType(item.value, nestedField.itemType);
+            });
+          } else if (nestedField.isTuple) {
+            // Handle nested Tuple fields
+            const tupleValues = nestedField.tupleItems.map(item => {
+              return convertValueToPolkadotType(item.value, item.type);
+            });
+            nestedValues[nestedField.name] = tupleValues;
+          } else if (nestedField.isOption) {
+            // Handle nested Option fields
+            if (nestedField.hasValue) {
+              nestedValues[nestedField.name] = convertValueToPolkadotType(nestedField.value, nestedField.valueType);
+            } else {
+              nestedValues[nestedField.name] = null;
+            }
+          } else if (nestedField.isStruct) {
+            // Handle doubly nested struct fields
+            const deepValues = {};
+            
+            for (const deepField of nestedField.nestedFields) {
+              deepValues[deepField.name] = convertValueToPolkadotType(deepField.value, deepField.type);
+            }
+            
+            // Create instance of the doubly nested struct
+            const DeepStructConstructor = window[nestedField.referencedStructName];
+            if (DeepStructConstructor) {
+              nestedValues[nestedField.name] = new DeepStructConstructor(registry, deepValues);
+            } else {
+              nestedValues[nestedField.name] = deepValues;
+            }
+          } else {
+            // Handle basic nested fields
+            nestedValues[nestedField.name] = convertValueToPolkadotType(nestedField.value, nestedField.type);
+          }
+        }
+        
+        // Create instance of the nested struct
+        const NestedStructConstructor = window[field.referencedStructName];
+        if (NestedStructConstructor) {
+          fieldValues[field.name] = new NestedStructConstructor(registry, nestedValues);
+        } else {
+          fieldValues[field.name] = nestedValues;
+        }
+      } else {
+        // Handle basic fields
+        fieldValues[field.name] = convertValueToPolkadotType(field.value, field.type);
+      }
+    }
+
+    console.log("fieldValues", fieldValues)
+    console.log("Type", ClassConstructor)
+
+    // Create instance
+    const instance = new ClassConstructor(registry, fieldValues);
+
+    console.log("instance", instance)
+    const result = `
+hex: ${instance.toHex()}
+JSON: ${JSON.stringify(instance.toJSON(), null, 2)}
+`;
+
+    // Display result
+    classInfo.debugResult = result;
+  } catch (error) {
+    console.error('Error creating struct instance:', error);
+    classInfo.debugResult = `Error: ${error.message}`;
+  }
+}
+
+// Create instance of an Enum type
+function createEnumInstance(index) {
+  const classInfo = extractedClasses.value[index];
+  if (!classInfo || classInfo.type !== 'Enum') return;
+
+  try {
+    // Get the class constructor
+    const ClassConstructor = window[classInfo.name];
+    if (!ClassConstructor) {
+      classInfo.debugResult = `Error: Class ${classInfo.name} not found in global scope`;
+      return;
+    }
+
+    const selectedVariant = getSelectedVariant(classInfo);
+    if (!selectedVariant) {
+      classInfo.debugResult = 'Error: No variant selected';
+      return;
+    }
+
+    // Create instance based on variant
+    let instance;
+
+    if (selectedVariant.hasValue) {
+      // Variant with value
+      const value = convertValueToPolkadotType(selectedVariant.value, selectedVariant.type);
+      instance = new ClassConstructor({ [selectedVariant.name]: value });
+    } else {
+      // Variant without value
+      instance = new ClassConstructor(selectedVariant.name);
+    }
+
+    // Display result
+    classInfo.debugResult = JSON.stringify(instance, null, 2);
+  } catch (error) {
+    console.error('Error creating enum instance:', error);
+    classInfo.debugResult = `Error: ${error.message}`;
+  }
+}
+
+// Create instance of other Polkadot codec types
+function createOtherTypeInstance(index) {
+  const classInfo = extractedClasses.value[index];
+  if (!classInfo) return;
+
+  try {
+    // Get the class constructor
+    const ClassConstructor = window[classInfo.name];
+    if (!ClassConstructor) {
+      classInfo.debugResult = `Error: Class ${classInfo.name} not found in global scope`;
+      return;
+    }
+
+    let instance;
+
+    if (classInfo.type === 'Vec') {
+      // Create Vec instance
+      const items = classInfo.debugValue.split(',').map(item => item.trim());
+      instance = new ClassConstructor(items);
+    } else if (classInfo.type === 'Option') {
+      // Create Option instance
+      instance = new ClassConstructor(classInfo.debugValue || null);
+    } else if (classInfo.type === 'Compact') {
+      // Create Compact instance
+      instance = new ClassConstructor(Number(classInfo.debugValue) || 0);
+    } else {
+      // Create other type instance
+      instance = new ClassConstructor(classInfo.debugValue);
+    }
+
+    // Display result
+    classInfo.debugResult = JSON.stringify(instance, null, 2);
+  } catch (error) {
+    console.error('Error creating instance:', error);
+    classInfo.debugResult = `Error: ${error.message}`;
+  }
+}
+
+// Process nested fields recursively to ensure proper type detection and initialization
+function processNestedFields(fields, depth = 0) {
+  // Prevent infinite recursion
+  if (depth > 10) return;
+  
+  for (const field of fields) {
+    console.log(`Processing field: ${field.name} with type: ${field.type}`);
+    
+    // Detect field types
+    field.isVec = isVecType(field.type);
+    field.isTuple = isTupleType(field.type);
+    field.isOption = isOptionType(field.type);
+    field.isStruct = isPolkadotStructType(field.type);
+
+    console.log(`field: ${field.name} isStruct: ${field.isStruct}`);
+    
+    // Find the referenced struct if this is a struct field using our improved detection
+    let referencedStruct = null;
+    // Use our improved findReferencedStruct function
+    referencedStruct = findReferencedStruct(field.type);
+    
+    // Update isStruct based on whether we found a referenced struct
+    field.isStruct = referencedStruct !== null;
+    
+    if (field.isStruct) {
+      console.log(`Found struct match: ${field.name} (${field.type}) -> ${referencedStruct.name}`);
+    } else {
+      console.log(`Not a struct field: ${field.name} (${field.type})`);
+    }
+    
+    // Handle tuple fields
+    if (field.isTuple && (!field.tupleItems || field.tupleItems.length === 0)) {
+      const tupleContent = field.type.substring(1, field.type.length - 1);
+      field.tupleItems = tupleContent.split(',').map((t, index) => {
+        const type = t.trim();
+        return { type, value: '', index };
+      });
+    }
+    
+    // Handle Vec fields
+    if (field.isVec && (!field.items || field.items.length === 0)) {
+      field.items = [{ value: '' }];
+      
+      // Extract item type for Vec
+      if (field.type.startsWith('Vec<')) {
+        const vecMatch = field.type.match(/Vec<([^>]+)>/);
+        if (vecMatch && vecMatch[1]) {
+          field.itemType = vecMatch[1].trim();
+        }
+      } else if (field.type.match(/\[.*?;.*?\]/)) {
+        // Handle array notation [Type; Length]
+        const arrayMatch = field.type.match(/\[([^;]+);\s*([^\]]+)\]/);
+        if (arrayMatch && arrayMatch[1]) {
+          field.itemType = arrayMatch[1].trim();
+        }
+      }
+    }
+    
+    // Handle Option fields
+    if (field.isOption) {
+      const optionMatch = field.type.match(/Option<([^>]+)>/);
+      if (optionMatch && optionMatch[1]) {
+        field.valueType = optionMatch[1].trim();
+      }
+    }
+    
+    // Process struct fields
+    if (field.isStruct && referencedStruct) {
+      field.referencedStructName = referencedStruct.name;
+      
+      // Process fields from the referenced struct
+      if (referencedStruct.fields && referencedStruct.fields.length > 0) {
+        // Create a deep copy of the fields
+        field.nestedFields = JSON.parse(JSON.stringify(referencedStruct.fields));
+        console.log(`Copied ${field.nestedFields.length} fields from ${referencedStruct.name} for ${field.name}`);
+        
+        // Recursively process the nested fields
+        processNestedFields(field.nestedFields, depth + 1);
+      }
+    }
+  }
+}
+
+// Convert value to appropriate Polkadot type
+function convertValueToPolkadotType(value, type) {
+  if (value === undefined || value === null || value === '') {
+    return null;
+  }
+
+  // Handle numeric types
+  if (type && (type.includes('u8') || type.includes('u16') || type.includes('u32') ||
+    type.includes('u64') || type.includes('u128') || type.includes('i8') ||
+    type.includes('i16') || type.includes('i32') || type.includes('i64') ||
+    type.includes('i128') || type.includes('Compact'))) {
+    return Number(value);
+  }
+
+  // Handle boolean
+  if (type && type.includes('bool')) {
+    return value === 'true' || value === true;
+  }
+
+  // Handle AccountId, Hash, etc.
+  if (type && (type.includes('AccountId') || type.includes('H256') || type.includes('Hash'))) {
+    // Ensure it starts with 0x if it's a hex value
+    if (typeof value === 'string' && !value.startsWith('0x') && /^[0-9a-fA-F]+$/.test(value)) {
+      return `0x${value}`;
+    }
+    return value;
+  }
+
+  // Default to string
+  return value;
 }
 
 // Toggle execute mode for a function
