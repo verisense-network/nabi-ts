@@ -7,15 +7,16 @@ import type { TypeDefinition, Field } from "./types";
  */
 export function convertType(
   type: TypeDefinition,
-  useNativeTypes: boolean = false
+  useNativeTypes: boolean = false,
+  preserveGenerics: boolean = false
 ): string {
   switch (type.kind) {
     case "Path":
-      return convertPathType(type, useNativeTypes);
+      return convertPathType(type, useNativeTypes, preserveGenerics);
     case "Tuple":
-      return convertTupleType(type, useNativeTypes);
+      return convertTupleType(type, useNativeTypes, preserveGenerics);
     case "Array":
-      return convertArrayType(type, useNativeTypes);
+      return convertArrayType(type, useNativeTypes, preserveGenerics);
     case "TypeAlias":
       if (type.target) {
         return convertType(type.target, useNativeTypes);
@@ -36,6 +37,16 @@ export function convertInputType(
   useNativeTypes: boolean = true
 ): string {
   if (input && input.type) {
+    // 特殊处理G<T>类型，确保不会被添加前缀
+    if (input.type.kind === "Path" && 
+        input.type.path && 
+        input.type.path.length === 1 && 
+        input.type.path[0] === "G" &&
+        input.type.generic_args) {
+      const innerType = convertType(input.type.generic_args[0], useNativeTypes);
+      return `G<${innerType}>`;
+    }
+    
     return convertType(input.type, useNativeTypes);
   }
   return "unknown";
@@ -48,7 +59,8 @@ export function convertInputType(
  */
 function convertPathType(
   type: TypeDefinition,
-  useNativeTypes: boolean = false
+  useNativeTypes: boolean = false,
+  preserveGenerics: boolean = false
 ): string {
   if (!type.path || type.path.length === 0) {
     return "unknown";
@@ -111,13 +123,40 @@ function convertPathType(
       }
       return "unknown";
     default:
+      // 判断是否是自定义类型（非基本类型）
+      const isPrimitive = [
+        "u8", "u16", "u32", "u64", "u128",
+        "i8", "i16", "i32", "i64", "i128",
+        "f32", "f64", "bool", "String", "Vec", "Option", "Result"
+      ].includes(typeName);
+      
+      // 处理泛型参数
+      if (preserveGenerics && type.path.length === 1) {
+        // 如果是在处理泛型类型，保留原始泛型参数名称
+        if (type.generic_args && type.generic_args.length > 0) {
+          // 泛型参数的引用应该保持原样，不进行替换
+          return typeName;
+        }
+      }
+      
+      // 判断是否是自定义类型且不是泛型参数
+      const isCustomType = !isPrimitive && !preserveGenerics;
+      
+      // 只有在 useNativeTypes=true 时才添加 I 前缀
+      let finalTypeName = typeName;
+      
+      // 如果是生成接口类型 (useNativeTypes=true) 且是自定义类型且没有I前缀，则添加I前缀
+      if (useNativeTypes && isCustomType && !typeName.startsWith("I") && typeName.length > 0) {
+        finalTypeName = `I${typeName}`;
+      }
+        
       if (type.generic_args && type.generic_args.length > 0) {
         const genericParams = type.generic_args
-          .map((arg) => convertType(arg, useNativeTypes))
+          .map((arg) => convertType(arg, useNativeTypes, preserveGenerics))
           .join(", ");
-        return `${typeName || 'any'}<${genericParams}>`;
+        return `${finalTypeName || 'any'}<${genericParams}>`;
       }
-      return typeName || 'any';
+      return finalTypeName || 'any';
   }
 }
 
@@ -128,7 +167,8 @@ function convertPathType(
  */
 function convertTupleType(
   type: TypeDefinition,
-  useNativeTypes: boolean = false
+  useNativeTypes: boolean = false,
+  preserveGenerics: boolean = false
 ): string {
   if (!type.tuple_args) {
     return "[unknown]";
@@ -151,7 +191,8 @@ function convertTupleType(
  */
 function convertArrayType(
   type: TypeDefinition,
-  useNativeTypes: boolean = false
+  useNativeTypes: boolean = false,
+  preserveGenerics: boolean = false
 ): string {
   if (!type.elem) {
     return "unknown[]";

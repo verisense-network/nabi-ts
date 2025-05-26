@@ -128,7 +128,7 @@ export async function generateCode(
   const typeAliases: string[] = [];
   const functions: string[] = [];
   const jsExports: string[] = [];
-
+  
   const dependencyGraph = new Map<string, Set<string>>();
 
   for (const entry of entries) {
@@ -194,12 +194,12 @@ function processStruct(
     ) {
       dependencies.add(field.type.path[0]);
     }
-
-    let fieldType = convertType(field.type);
+    
+    let fieldType = convertType(field.type, false);
 
     fields.push(`  /** ${field.name} field type: ${fieldType} */`);
 
-    let tsNativeType = fieldType;
+    let tsNativeType = convertType(field.type, true);
     tsNativeType = tsNativeType.replace(/Vec\.with\([^)]+\)/g, (match) => {
       const innerTypeMatch = match.match(/Vec\.with\(([^)]+)\)/);
       if (innerTypeMatch && innerTypeMatch[1]) {
@@ -364,7 +364,25 @@ function processFunction(
       if (inputDef) {
         let paramType = convertInputType(inputDef);
 
-        if (
+        // 检查是否是泛型类型，例如 G<T> 或 Array<T>
+        if (paramType.includes("<") && paramType.includes(">")) {
+          // 是泛型类型，需要特殊处理
+          const genericMatch = paramType.match(/^([A-Z][A-Za-z0-9_]*)(<.+>)$/);
+          if (genericMatch) {
+            const baseName = genericMatch[1];
+            const genericPart = genericMatch[2];
+            
+            // 只有当基础类型不是内置类型且不是已经有I前缀的类型时，才添加I前缀
+            if (
+              ![
+                "String", "Text", "U8", "U16", "U32", "U64", "U128",
+                "I8", "I16", "I32", "I64", "I128", "Bool", "Array", "G"
+              ].includes(baseName) && !baseName.startsWith("I")
+            ) {
+              paramType = `I${baseName}${genericPart}`;
+            }
+          }
+        } else if (
           paramType.match(/^[A-Z][A-Za-z0-9_]*$/) &&
           ![
             "String",
@@ -380,7 +398,8 @@ function processFunction(
             "I64",
             "I128",
             "Bool",
-          ].includes(paramType)
+          ].includes(paramType) &&
+          !paramType.startsWith("I") // 确保不重复添加 I 前缀
         ) {
           paramType = `I${paramType}`;
         } else if (paramType.startsWith("[") && paramType.endsWith("]")) {
@@ -403,7 +422,8 @@ function processFunction(
                 "I64",
                 "I128",
                 "Bool",
-              ].includes(trimmedType)
+              ].includes(trimmedType) && 
+              !trimmedType.startsWith("I") // 确保不重复添加 I 前缀
             ) {
               return `I${trimmedType}`;
             } else {
@@ -437,7 +457,8 @@ function processFunction(
                   "I64",
                   "I128",
                   "Bool",
-                ].includes(innerTypeTrimmed)
+                ].includes(innerTypeTrimmed) &&
+                !innerTypeTrimmed.startsWith("I") // 确保不重复添加 I 前缀
               ) {
                 return `Array<I${innerTypeTrimmed}>`;
               } else {
@@ -553,7 +574,9 @@ function processFunction(
           polkadotInnerType = innerType;
         }
 
-        const createFuncName = `create${typeName}TypeResult`;
+        // 移除类型名称前的 I 前缀，确保辅助函数名称不包含 I 前缀
+        const baseTypeName = typeName.startsWith('I') ? typeName.substring(1) : typeName;
+        const createFuncName = `create${baseTypeName}TypeResult`;
 
         createInstancesCode.push(
           `  const Type = ${createFuncName}(${polkadotInnerType === innerType ? `"${polkadotInnerType}"` : polkadotInnerType})`
@@ -818,7 +841,8 @@ function processFunction(
     typeAliasHandlingCode = `
   const responseBytes = Buffer.from(response as string, "hex");
 
-  const ResultType = create${typeAliasName}TypeResult(${typeAliasOkType});
+  // 确保移除 typeAliasName 中的 I 前缀
+  const ResultType = create${typeAliasName.startsWith('I') ? typeAliasName.substring(1) : typeAliasName}TypeResult(${typeAliasOkType});
   return new ResultType(registry, responseBytes);`;
   }
 
@@ -1179,18 +1203,86 @@ function processTypeAlias(
   const dependencies = new Set<string>();
   const { name, target, generics } = entry;
 
-  const targetType = convertType(target, true);
-
+  // 收集导入信息
   const imports = getImportForType(target);
   imports.forEach((imp) => neededImports.add(imp));
 
   let typeAliasDefinition = "";
 
+  // 特殊处理泛型类型别名
   if (generics && generics.length > 0) {
+    // 泛型参数声明部分
     let genericParams = generics.join(", ");
+    
+    // 根据目标类型的不同，分别处理
+    if (target.kind === "Path") {
+      // 直接处理路径类型
+      let resultType = "";
+      
+      // 处理Result类型的类型别名，例如G<T>
+      if (target.path && target.path[0] === "Result" && target.generic_args && target.generic_args.length === 2) {
+        // 对应Result<T, E>格式的类型别名
+        // 检查泛型参数是否在类型定义中被引用
+        let okType;
+        if (target.generic_args[0].kind === "Path" && 
+            target.generic_args[0].path && 
+            target.generic_args[0].path.length === 1 && 
+            generics.includes(target.generic_args[0].path[0])) {
+          // 如果是泛型参数引用，直接使用原始名称
+          okType = target.generic_args[0].path[0];
+        } else {
+          // 否则转换为实际类型
+          okType = convertType(target.generic_args[0], true);
+        }
+        
+        const errType = convertType(target.generic_args[1], true);
+        resultType = `{ ok: ${okType} | null, err: ${errType} | null }`;
+        
+        // 为类型别名生成辅助函数
+        const helperFunction = generateResultTypeAliasHelper(name, target);
+        if (helperFunction) {
+          const typeWithHelper = `export type ${name}<${genericParams}> = ${resultType};
 
-    typeAliasDefinition = `export type ${name}<${genericParams}> = ${targetType};`;
+${helperFunction}`;
+          typeAliases.push(typeWithHelper);
+          neededImports.add("Result");
+          
+          // 添加错误类型的导入
+          if (target.generic_args[1].kind === "Path" && 
+              target.generic_args[1].path && 
+              target.generic_args[1].path[0] === "String") {
+            neededImports.add("Text");
+          }
+          return;
+        }
+      } else if (target.path && target.path.length === 1) {
+        // 如果目标类型有 generic_args，需要手动处理
+        if (target.generic_args && target.generic_args.length > 0) {
+          const args = target.generic_args.map(arg => {
+            // 特殊处理: 如果参数和任何泛型参数名匹配，保留原始参数名
+            const paramPath = arg.kind === "Path" && arg.path && arg.path.length === 1 ? arg.path[0] : null;
+            if (paramPath && generics.includes(paramPath)) {
+              return paramPath; // 保留原始泛型参数名
+            }
+            return convertType(arg, true);
+          }).join(", ");
+          resultType = `${target.path[0]}<${args}>`;
+        } else {
+          resultType = target.path[0];
+        }
+      } else {
+        // 其他路径类型
+        resultType = convertType(target, true);
+      }
+      
+      typeAliasDefinition = `export type ${name}<${genericParams}> = ${resultType};`;
+    } else {
+      // 其他类型（元组、数组等）
+      const targetType = convertType(target, true);
+      typeAliasDefinition = `export type ${name}<${genericParams}> = ${targetType};`;
+    }
 
+    // 为 Result 类型添加辅助函数
     if (target.kind === "Path" && target.path && target.path[0] === "Result") {
       const helperFunction = generateResultTypeAliasHelper(name, target);
       if (helperFunction) {
@@ -1198,8 +1290,11 @@ function processTypeAlias(
       }
     }
   } else {
+    // 非泛型类型别名
+    const targetType = convertType(target, true);
     typeAliasDefinition = `export type ${name} = ${targetType};`;
 
+    // 为非泛型类型添加辅助函数
     if (target.kind === "Path" && target.path) {
       const helperFunction = generateTypeAliasHelper(name, target);
       if (helperFunction) {
@@ -1209,7 +1304,6 @@ function processTypeAlias(
   }
 
   typeAliases.push(typeAliasDefinition);
-
   dependencyGraph.set(name, dependencies);
 }
 
@@ -1237,8 +1331,11 @@ function generateResultTypeAliasHelper(
     }
   }
 
+  // 移除类型名称中的 I 前缀，确保辅助函数名称不包含 I 前缀
+  const baseName = name.startsWith('I') ? name.substring(1) : name;
+  
   return `
-export function create${name}TypeResult(OkType: any) {
+export function create${baseName}TypeResult(OkType: any) {
   return Result.with({
     Ok: OkType,
     Err: ${errTypeStr}
