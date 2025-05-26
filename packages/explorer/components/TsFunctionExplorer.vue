@@ -1164,7 +1164,6 @@ function findReferencedStruct(type) {
   const cleanType = type.split('<')[0].trim();
   
   // First try exact match (most reliable)
-  console.log("extractedClasses.value", extractedClasses.value)
   for (const cls of extractedClasses.value) {
     if (cls.type === 'Struct' && (cleanType === cls.name || type === cls.name)) {
       return cls;
@@ -1199,7 +1198,6 @@ function isVecType(type) {
 
 // Check if type is a Tuple type
 function isTupleType(type) {
-  console.log("type", type)
   return type.startsWith('(') && type.endsWith(')');
 }
 
@@ -1293,6 +1291,39 @@ function removeVecItem(field, index) {
   }
 }
 
+// 递归处理嵌套结构体字段的辅助函数
+function processStructField(field) {
+  if (field.isStruct) {
+    // 处理结构体字段
+    const nestedValues = {};
+    
+    for (const nestedField of field.nestedFields) {
+      // 递归处理每个嵌套字段，无论嵌套多少层
+      nestedValues[nestedField.name] = processStructField(nestedField);
+    }
+    
+    // 创建结构体实例
+    const StructConstructor = window[field.referencedStructName];
+    if (StructConstructor) {
+      return new StructConstructor(registry, nestedValues);
+    } else {
+      return nestedValues; // 如果找不到构造函数，返回嵌套的值对象
+    }
+  } else if (field.isVec) {
+    // 处理向量字段
+    return field.items.map(item => convertValueToPolkadotType(item.value, field.itemType));
+  } else if (field.isTuple) {
+    // 处理元组字段
+    return field.tupleItems.map(item => convertValueToPolkadotType(item.value, item.type));
+  } else if (field.isOption) {
+    // 处理Option字段
+    return field.hasValue ? convertValueToPolkadotType(field.value, field.valueType) : null;
+  } else {
+    // 处理基本字段
+    return convertValueToPolkadotType(field.value, field.type);
+  }
+}
+
 // Create instance of a Struct type
 function debugCodecType(index) {
   const classInfo = extractedClasses.value[index];
@@ -1306,83 +1337,12 @@ function debugCodecType(index) {
       return;
     }
 
-    // Prepare field values
+    // Prepare field values using recursive processing
     const fieldValues = {};
-
+    
     for (const field of classInfo.fields) {
-      if (field.isVec) {
-        // Handle Vec fields
-        fieldValues[field.name] = field.items.map(item => {
-          return convertValueToPolkadotType(item.value, field.itemType);
-        });
-      } else if (field.isTuple) {
-        // Handle Tuple fields
-        const tupleValues = field.tupleItems.map(item => {
-          return convertValueToPolkadotType(item.value, item.type);
-        });
-        fieldValues[field.name] = tupleValues;
-      } else if (field.isOption) {
-        // Handle Option fields
-        if (field.hasValue) {
-          fieldValues[field.name] = convertValueToPolkadotType(field.value, field.valueType);
-        } else {
-          fieldValues[field.name] = null;
-        }
-      } else if (field.isStruct) {
-        // Handle nested struct fields
-        const nestedValues = {};
-        
-        for (const nestedField of field.nestedFields) {
-          if (nestedField.isVec) {
-            // Handle nested Vec fields
-            nestedValues[nestedField.name] = nestedField.items.map(item => {
-              return convertValueToPolkadotType(item.value, nestedField.itemType);
-            });
-          } else if (nestedField.isTuple) {
-            // Handle nested Tuple fields
-            const tupleValues = nestedField.tupleItems.map(item => {
-              return convertValueToPolkadotType(item.value, item.type);
-            });
-            nestedValues[nestedField.name] = tupleValues;
-          } else if (nestedField.isOption) {
-            // Handle nested Option fields
-            if (nestedField.hasValue) {
-              nestedValues[nestedField.name] = convertValueToPolkadotType(nestedField.value, nestedField.valueType);
-            } else {
-              nestedValues[nestedField.name] = null;
-            }
-          } else if (nestedField.isStruct) {
-            // Handle doubly nested struct fields
-            const deepValues = {};
-            
-            for (const deepField of nestedField.nestedFields) {
-              deepValues[deepField.name] = convertValueToPolkadotType(deepField.value, deepField.type);
-            }
-            
-            // Create instance of the doubly nested struct
-            const DeepStructConstructor = window[nestedField.referencedStructName];
-            if (DeepStructConstructor) {
-              nestedValues[nestedField.name] = new DeepStructConstructor(registry, deepValues);
-            } else {
-              nestedValues[nestedField.name] = deepValues;
-            }
-          } else {
-            // Handle basic nested fields
-            nestedValues[nestedField.name] = convertValueToPolkadotType(nestedField.value, nestedField.type);
-          }
-        }
-        
-        // Create instance of the nested struct
-        const NestedStructConstructor = window[field.referencedStructName];
-        if (NestedStructConstructor) {
-          fieldValues[field.name] = new NestedStructConstructor(registry, nestedValues);
-        } else {
-          fieldValues[field.name] = nestedValues;
-        }
-      } else {
-        // Handle basic fields
-        fieldValues[field.name] = convertValueToPolkadotType(field.value, field.type);
-      }
+      // 使用递归函数处理每个字段，无论嵌套多少层
+      fieldValues[field.name] = processStructField(field);
     }
 
     console.log("fieldValues", fieldValues)
@@ -1489,8 +1449,6 @@ function processReferencedStructs(extractedClasses) {
   // 遍历所有已提取的结构体
   for (const cls of extractedClasses) {
     if (cls.type === 'Struct' && cls.fields) {
-      console.log(`Processing nested references for struct: ${cls.name}`);
-      
       // 为每个字段处理嵌套引用
       for (const field of cls.fields) {
         if (!field.type) continue;
@@ -1523,8 +1481,6 @@ function processNestedFields(fields, depth = 0) {
   if (depth > 10) return;
   
   for (const field of fields) {
-    console.log(`Processing field: ${field.name} with type: ${field.type}`);
-    
     // Ensure the field has all required properties
     if (field.value === undefined) field.value = '';
     
@@ -1535,7 +1491,6 @@ function processNestedFields(fields, depth = 0) {
     
     // Check if this is a struct field
     const referencedStruct = findReferencedStruct(field.type);
-    console.log("referencedStruct", field.type)
     
     // Simple struct detection - if the type is a single word and starts with uppercase, it's likely a struct
     // This is a fallback for when findReferencedStruct fails
@@ -1552,11 +1507,9 @@ function processNestedFields(fields, depth = 0) {
     
     if (field.isStruct) {
       if (referencedStruct) {
-        console.log(`Processing struct field: ${field.name} (${field.type}) -> ${referencedStruct.name}`);
         field.referencedStructName = referencedStruct.name;
       } else {
         // Handle case where we think it's a struct but don't have the reference
-        console.log(`Processing likely struct field: ${field.name} (${field.type})`);
         field.referencedStructName = field.type; // Use the type name as the referenced struct name
       }
       
@@ -1564,7 +1517,6 @@ function processNestedFields(fields, depth = 0) {
       if (referencedStruct && referencedStruct.fields && referencedStruct.fields.length > 0) {
         // Create a deep copy of the fields
         field.nestedFields = JSON.parse(JSON.stringify(referencedStruct.fields));
-        console.log(`Copied ${field.nestedFields.length} fields from ${referencedStruct.name} for ${field.name}`);
         
         // Process each nested field to ensure it has all required properties
         for (const nestedField of field.nestedFields) {
