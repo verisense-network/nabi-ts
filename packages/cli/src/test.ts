@@ -1,51 +1,29 @@
 import {
   registry,
   initApi,
-  E,
-  A,
-  B,
-  C,
-  T,
-  IA,
-  a as aFn,
-  tv as tvFn,
-  bbb as bbbFn,
-  cc as ccFn,
-  should_not_call_put,
-  should_call_put,
+  // cc,
+  create_community,
+  get_invite_fee,
+  get_account_count,
+  get_accounts
 } from "../output/data.ts";
 
-const nucleusId = "kGfsp8zVbB4GfiwSjpejLTLM8R4JbsPtniKhu1ycVjJpLYLZp";
+const nucleusId = "kGk1FJCoPv4JTxez4aaWgGVaTPvsc2YPStz6ZWni4e61FVUW6";
 
 try {
-  await initApi("http://localhost:9944");
+  await initApi("http://localhost:9944/");
 
-  const e = new E(registry, { a: [1, 2, 3], b: 4, c: 5 });
+  // const ccRes = await cc(nucleusId, "123", "bbc");
+  // console.log("ccRes", ccRes.toHuman());
 
-  const aData = {
-    b: B.from(registry, {
-      c: C.from(registry, { d: [1, 2, 3], e: ["a", "b"] })!,
-    })!,
-    tuple_field: [1, "a"],
-    array_field: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
-    slice_field: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
-    ggg: T.from(registry, { a: 1, b: 2 })!,
-  } as IA;
+  const getAccountCountRes = await get_account_count(nucleusId);
+  console.log("getAccountCountRes", getAccountCountRes.toHuman());
 
-  const aRes = await aFn(nucleusId, aData);
-  console.log("aRes", aRes.toHuman());
+  const getAccountsRes = await get_accounts(nucleusId, []);
+  console.log("getAccountsRes", getAccountsRes.toHuman());
 
-  const tvRes = await tvFn(nucleusId, {
-    ok: 1,
-    err: "err",
-  });
-  console.log("tvRes", tvRes.toHuman());
-
-  const bbbRes = await bbbFn(nucleusId, [aData, "abc"]);
-  console.log("bbbRes", bbbRes.toHuman());
-
-  const ccRes = await ccFn(nucleusId, "aaa", "bbc");
-  console.log("ccRes", ccRes.toHuman());
+  const getInviteFeeRes = await get_invite_fee(nucleusId);
+  console.log("getInviteFeeRes", getInviteFeeRes.toHuman());
 
   // const shouldNotCallPutRes = await should_not_call_put(nucleusId);
   // console.log("shouldNotCallPutRes", shouldNotCallPutRes.toHuman());

@@ -3,7 +3,7 @@ use vrs_core_sdk::export;
 
 #[derive(Debug, Decode, Encode)]
 #[export]
-pub struct T {
+pub struct Q {
     pub a: u32,
     pub b: u32,
 }

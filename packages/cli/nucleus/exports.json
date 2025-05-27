@@ -22,8 +22,38 @@
         }
       }
     ],
-    "name": "T",
+    "generics": [],
+    "name": "Q",
     "type": "struct"
+  },
+  {
+    "generics": [
+      "T"
+    ],
+    "name": "G",
+    "target": {
+      "generic_args": [
+        {
+          "generic_args": [],
+          "kind": "Path",
+          "path": [
+            "T"
+          ]
+        },
+        {
+          "generic_args": [],
+          "kind": "Path",
+          "path": [
+            "String"
+          ]
+        }
+      ],
+      "kind": "Path",
+      "path": [
+        "Result"
+      ]
+    },
+    "type": "type_alias"
   },
   {
     "fields": [
@@ -66,6 +96,7 @@
         }
       }
     ],
+    "generics": [],
     "name": "E",
     "type": "struct"
   },
@@ -82,6 +113,7 @@
         }
       }
     ],
+    "generics": [],
     "name": "D",
     "type": "struct"
   },
@@ -98,6 +130,7 @@
         }
       }
     ],
+    "generics": [],
     "name": "B",
     "type": "struct"
   },
@@ -144,6 +177,7 @@
         }
       }
     ],
+    "generics": [],
     "name": "C",
     "type": "struct"
   },
@@ -479,11 +513,12 @@
           "kind": "Path",
           "path": [
             "quote",
-            "T"
+            "Q"
           ]
         }
       }
     ],
+    "generics": [],
     "name": "A",
     "type": "struct"
   }

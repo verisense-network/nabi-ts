@@ -4,6 +4,7 @@ export interface StructEntry {
   type: "struct";
   name: string;
   fields: Field[];
+  generics?: string[];
 }
 
 export interface EnumEntry {
@@ -27,7 +28,7 @@ export interface Field {
 
 export interface Variant {
   name: string;
-  fields: TypeDefinition[];
+  fields: Field[];
 }
 
 export interface TypeDefinition {

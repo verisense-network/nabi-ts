@@ -101,5 +101,5 @@ pub struct A {
     pub tuple_field: (u32, String),
     pub array_field: [u8; 10],
     pub slice_field: Vec<u64>,
-    pub ggg: quote::T,
+    pub ggg: quote::Q,
 }

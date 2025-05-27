@@ -36,7 +36,7 @@ async function execute(jsonFilePath: string, outputDir: string, options: any) {
     const tsCode = await generateCode(abiEntries);
 
     const versionedCode =
-      tsCode + "\n// Generated Version: " + Date.now() + "\n";
+      tsCode + "\n// Generated Version: " + new Date().toISOString() + "\n";
 
     const fileBasename = basename(jsonFilePath, extname(jsonFilePath));
     const tsFilePath = join(outputDir, `${fileBasename}.ts`);
