@@ -62,7 +62,6 @@
 
 <script setup>
 import { ref } from 'vue';
-import JsonStructViewer from './components/JsonStructViewer.vue';
 import TsFunctionExplorer from './components/TsFunctionExplorer.vue';
 import { Button } from '@/components/ui/button'
 import { Card, CardHeader, CardTitle, CardAction, CardContent } from '@/components/ui/card'

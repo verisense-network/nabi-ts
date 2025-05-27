@@ -151,11 +151,50 @@
               <h4 class="text-sm font-medium mb-2">Input Parameters</h4>
               <div class="space-y-3">
                 <div v-for="(param, paramIndex) in func.params" :key="paramIndex" class="param-input">
-                  <Label class="text-xs">
-                    {{ param.name }} <span class="text-muted-foreground">({{ param.type }})</span>
+                  <Label class="text-xs font-medium">
+                    {{ param.name }} <span class="text-muted-foreground">({{ param.type === 'complex' ? param.complexType : param.type }})</span>
                   </Label>
 
-                  <div v-if="isObjectType(param.type)" class="ml-4 mt-2 pl-2 border-l border-gray-200 space-y-2">
+                  <div v-if="param.type === 'complex'" class="ml-4 mt-2 pl-2 border-l border-gray-200 space-y-2">
+                    <div v-for="(field, fieldIndex) in param.fields" :key="fieldIndex" class="mb-3">
+                      <div class="flex items-center">
+                        <Label class="text-xs">
+                          {{ field.name }} <span class="text-muted-foreground">({{ field.type }})</span>
+                        </Label>
+                      </div>
+                      
+                      <div v-if="isCustomTypeField(field)" class="ml-4 mt-1 pl-2 border-l border-gray-200 space-y-2">
+                        <ComplexTypeInputField :field="field" :registry="registry" />
+                      </div>
+                      
+                      <div v-else-if="isArrayField(field)" class="ml-4 mt-1">
+                        <div class="flex flex-col space-y-2">
+                          <div v-for="(item, itemIndex) in getOrCreateFieldItems(field)" :key="itemIndex" class="flex space-x-2">
+                            <Input v-model="item.value" :placeholder="getPlaceholder(getArrayItemType(field))" class="h-8 flex-grow" />
+                            <Button size="sm" variant="outline" @click="removeComplexArrayItem(field, itemIndex)">
+                              <span class="i-lucide-minus h-4 w-4" />
+                            </Button>
+                          </div>
+                          <Button size="sm" variant="outline" @click="addComplexArrayItem(field)">
+                            Add
+                          </Button>
+                        </div>
+                      </div>
+                      
+                      <div v-else-if="isTupleField(field)" class="ml-4 mt-1">
+                        <div class="space-y-2">
+                          <div v-for="(tupleItem, tupleIndex) in getOrCreateTupleItems(field)" :key="tupleIndex" class="flex space-x-2">
+                            <Label class="text-xs w-10">{{ tupleIndex }}:</Label>
+                            <Input v-model="tupleItem.value" :placeholder="getPlaceholder(getTupleItemType(field, tupleIndex))" class="h-8 flex-grow" />
+                          </div>
+                        </div>
+                      </div>
+                      
+                      <Input v-else v-model="field.value" :placeholder="getPlaceholder(field.type)" class="h-8 mt-1 w-full" />
+                    </div>
+                  </div>
+
+                  <div v-else-if="isObjectType(param.type)" class="ml-4 mt-2 pl-2 border-l border-gray-200 space-y-2">
                     <div v-for="(prop, propIndex) in param.properties" :key="propIndex">
                       <Label class="text-xs">
                         {{ prop.name }} <span class="text-muted-foreground">({{ prop.type }})</span>
@@ -174,11 +213,22 @@
                         </Button>
                       </div>
                       <Button size="sm" variant="outline" @click="addArrayItem(param)">
-                        Add Item
+                        Add
                       </Button>
                     </div>
                   </div>
+                  
+                  <!-- 元组类型参数 -->
+                  <div v-else-if="param.type === 'tuple'" class="mt-2">
+                    <div class="space-y-2">
+                      <div v-for="(tupleType, tupleIndex) in param.tupleTypes" :key="tupleIndex" class="flex space-x-2">
+                        <Label class="text-xs w-10">{{ tupleIndex }}:</Label>
+                        <Input v-model="param.tupleValues[tupleIndex]" :placeholder="getPlaceholder(tupleType)" class="h-8 flex-grow" />
+                      </div>
+                    </div>
+                  </div>
 
+                  <!-- 基本类型参数 -->
                   <Input v-else v-model="param.value" :placeholder="getPlaceholder(param.type)" class="h-8 mt-1" />
                 </div>
 
@@ -208,7 +258,11 @@
 </template>
 
 <script setup>
+// 全局变量用于存储用户输入的代码
+let storedInterfaceCode = '';
+
 import { ref, watch, computed } from 'vue';
+import ComplexTypeInputField from './ComplexTypeInputField.vue';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -332,6 +386,60 @@ function processCodeString() {
 
     const code = props.codeString;
     if (!code || typeof code !== 'string') return;
+    
+    // 保存代码以便后续解析接口
+    storeInterfaceCode(code);
+    
+    // 测试测试是否包含IA接口
+    if (code.includes('interface IA') || code.includes('interface IT') || code.includes('interface IE') || code.includes('interface ID') || code.includes('interface IB') || code.includes('interface IC')) {
+      console.log('检测到接口定义，已保存用于后续分析');
+      // 测试手动解析一下
+      const testResult = parseInterfaceFromCode(code, 'IA');
+      console.log('测试解析IA结果:', testResult);
+    }
+    
+    // 手动添加示例接口定义（用于测试）
+    const exampleInterfaces = `
+export interface IT {
+    a: number;
+    b: number;
+}
+
+export interface IE {
+    a: Array<number>;
+    b: number;
+    c: number;
+}
+
+export interface ID {
+    b: number;
+}
+
+export interface IB {
+    c: IC;
+}
+
+export interface IC {
+    d: Array<number>;
+    e: [string, string];
+}
+
+export interface IA {
+    b: IB;
+    tuple_field: [number, string];
+    array_field: number[];
+    slice_field: Array<number>;
+    ggg: IT;
+}
+`;
+    
+    // 将示例接口定义添加到存储的代码中
+    storedInterfaceCode = code + exampleInterfaces;
+    console.log('已添加示例接口定义');
+    
+    // 再次测试解析
+    const testResult2 = parseInterfaceFromCode(storedInterfaceCode, 'IA');
+    console.log('添加示例后解析IA结果:', testResult2);
 
     // Define codec types in the global scope
     window.Text = codecTypes.Text;
@@ -1001,6 +1109,399 @@ function extractAllFunctions(code) {
   }
 }
 
+// 检查类型是否是接口类型（I开头的类型）
+function isInterfaceType(type) {
+  // 修改检测逻辑，只要是I开头后面跟大写字母的类型都视为接口类型，包括ID这样的简短名称
+  return type && type.startsWith('I') && /^I[A-Z][a-zA-Z0-9]*$/.test(type);
+}
+
+// 从window获取类型定义
+function getTypeDefinition(type) {
+  // 移除I前缀获取实际类型名
+  const actualType = type.startsWith('I') ? type.substring(1) : type;
+  
+  // 检查window中是否存在该类型
+  if (window && typeof window[actualType] !== 'undefined') {
+    return actualType;
+  }
+  
+  // 检查是否存在I前缀的接口定义
+  const interfaceKey = `I${actualType}`;
+  if (window && typeof window[interfaceKey] !== 'undefined') {
+    return interfaceKey;
+  }
+  
+  return null;
+}
+
+// 解析复杂类型参数（比如IA, IB等接口类型）
+function parseComplexType(typeName, processedTypes = new Set()) {
+  if (!typeName) {
+    // 如果没有提供类型名称，返回一个空对象结构
+    return {
+      name: 'Object',
+      fields: [{
+        name: 'value',
+        type: 'object',
+        value: '{}'
+      }]
+    };
+  }
+  
+  // 防止循环引用导致的无限递归
+  if (processedTypes.has(typeName)) {
+    return {
+      name: typeName,
+      fields: [{ name: 'circular-reference', type: 'object', value: '{}' }]
+    };
+  }
+  
+  // 添加当前类型到已处理列表
+  processedTypes.add(typeName);
+  
+  // 尝试查找window对象中的类型定义或接口定义
+  const typeDefinition = getTypeDefinition(typeName);
+  
+  try {
+    // 查找window中的接口定义
+    const interfaceKey = `I${typeName.replace(/^I/, '')}`;
+    if (window && typeof window[interfaceKey] !== 'undefined') {
+      // 找到了接口定义
+      const fields = [];
+      
+      // 尝试从接口定义中获取字段信息
+      for (const key in window[interfaceKey]) {
+        if (Object.prototype.hasOwnProperty.call(window[interfaceKey], key)) {
+          // 获取字段类型
+          let fieldType = typeof window[interfaceKey][key];
+          let fieldValue = null;
+          let nestedFields = null;
+          
+          // 检查是否是复杂类型（对象、数组等）
+          if (fieldType === 'object') {
+            // 处理数组类型
+            if (Array.isArray(window[interfaceKey][key])) {
+              fieldType = 'array';
+              fieldValue = [];
+              
+              // 处理数组元素
+              if (window[interfaceKey][key].length > 0) {
+                const elementType = window[interfaceKey][key][0]?.constructor?.name;
+                if (elementType && (elementType.startsWith('I') || /^[A-Z][a-zA-Z0-9]*$/.test(elementType))) {
+                  // 递归解析数组元素类型
+                  nestedFields = parseComplexType(elementType, new Set(processedTypes));
+                }
+              }
+            } 
+            // 处理元组类型
+            else if (window[interfaceKey][key] instanceof Array && window[interfaceKey][key].length > 0 && !window[interfaceKey][key].slice) {
+              fieldType = 'tuple';
+              fieldValue = [];
+              
+              // 为元组中的每个元素创建一个数组
+              nestedFields = [];
+              for (let i = 0; i < window[interfaceKey][key].length; i++) {
+                const tupleItemType = window[interfaceKey][key][i]?.constructor?.name;
+                if (tupleItemType && (tupleItemType.startsWith('I') || /^[A-Z][a-zA-Z0-9]*$/.test(tupleItemType))) {
+                  // 递归解析元组元素类型
+                  nestedFields[i] = parseComplexType(tupleItemType, new Set(processedTypes));
+                }
+              }
+            }
+            // 处理嵌套对象
+            else {
+              const nestedType = window[interfaceKey][key].constructor?.name;
+              if (nestedType && (nestedType.startsWith('I') || /^[A-Z][a-zA-Z0-9]*$/.test(nestedType))) {
+                fieldType = nestedType;
+                // 递归解析嵌套对象
+                nestedFields = parseComplexType(nestedType, new Set(processedTypes));
+              } else {
+                fieldType = 'object';
+                fieldValue = {};
+              }
+            }
+          } else {
+            // 设置基本类型的默认值
+            fieldValue = fieldType === 'string' ? '' : (fieldType === 'number' ? 0 : (fieldType === 'boolean' ? false : null));
+          }
+          
+          const field = {
+            name: key,
+            type: fieldType,
+            value: fieldValue
+          };
+          
+          // 如果有嵌套字段信息，添加到该字段中
+          if (nestedFields) {
+            field.nestedFields = nestedFields;
+          }
+          
+          fields.push(field);
+        }
+      }
+      
+      return {
+        name: typeName,
+        fields
+      };
+    }
+    
+    // 尝试从类型定义中获取信息
+    if (window && typeof window[typeName] !== 'undefined') {
+      const typeClass = window[typeName];
+      if (typeClass.prototype) {
+        const fields = [];
+        
+        // 尝试从类的原型中获取字段信息
+        // 通常Polkadot类型会有类似的结构
+        for (const key in typeClass.prototype) {
+          if (key.startsWith('get ')) {
+            const fieldName = key.substring(4);
+            fields.push({
+              name: fieldName,
+              type: 'string', // 默认为字符串类型
+              value: ''
+            });
+          }
+        }
+        
+        return {
+          name: typeName,
+          fields
+        };
+      }
+    }
+    
+    // 如果在window中找不到类型定义，创建一个基于类型名称的默认结构
+    // 这确保即使没有类型信息，UI仍然可以显示字段
+    if (typeDefinition || typeName) {
+      // 从类型名称推断可能的字段
+      // 例如：如果类型名称是UserInfo，则可能有name、age等字段
+      const inferredFields = inferFieldsFromTypeName(typeName);
+      
+      return {
+        name: typeName,
+        fields: inferredFields
+      };
+    }
+  } catch (error) {
+    console.error('Error parsing complex type:', error);
+  }
+  
+  // 如果所有尝试都失败，返回一个带有默认字段的结构
+  return {
+    name: typeName || 'Object',
+    fields: [
+      {
+        name: 'property1',
+        type: 'string',
+        value: ''
+      },
+      {
+        name: 'property2',
+        type: 'number',
+        value: 0
+      },
+      {
+        name: 'property3',
+        type: 'boolean',
+        value: false
+      }
+    ]
+  };
+}
+
+
+
+// 保存用户输入的代码
+function storeInterfaceCode(code) {
+  if (code && typeof code === 'string') {
+    storedInterfaceCode = code;
+    console.log('接口代码已保存，长度：', code.length);
+  }
+}
+
+// 从类型名称获取接口定义
+function inferFieldsFromTypeName(typeName) {
+  if (!typeName) return [];
+  
+  // 首先检查是否有已经保存的代码
+  let codeString = storedInterfaceCode;
+  
+  // 如果没有存储的代码，尝试从输入框中获取
+  if (!codeString) {
+    const codeInput = document.getElementById('code-input');
+    if (codeInput && codeInput.value) {
+      codeString = codeInput.value;
+    }
+    
+    // 如果还是没有，查找页面上的其他文本区域
+    if (!codeString) {
+      const textareas = document.querySelectorAll('textarea');
+      for (const textarea of textareas) {
+        if (textarea.value && textarea.value.includes('interface')) {
+          codeString = textarea.value;
+          break;
+        }
+      }
+    }
+  }
+  
+  // 如果找到了代码，使用parseInterfaceFromCode函数解析接口
+  if (codeString) {
+    const interfaceResult = parseInterfaceFromCode(codeString, typeName);
+    if (interfaceResult && interfaceResult.fields && interfaceResult.fields.length > 0) {
+      // 将接口字段转换为我们需要的格式
+      return interfaceResult.fields.map(field => {
+        let fieldType = field.type;
+        let defaultValue = null;
+        
+        // 根据字段类型设置默认值
+        if (fieldType === 'string' || fieldType.includes('String')) {
+          defaultValue = '';
+          fieldType = 'string';
+        } else if (fieldType === 'number' || fieldType.includes('Number') || 
+                  fieldType === 'int' || fieldType === 'float' || 
+                  fieldType === 'double' || fieldType === 'Integer') {
+          defaultValue = 0;
+          fieldType = 'number';
+        } else if (fieldType === 'boolean' || fieldType.includes('Boolean')) {
+          defaultValue = false;
+          fieldType = 'boolean';
+        } else if (field.isArray || field.type.includes('Array') || field.type.includes('[]')) {
+          defaultValue = [];
+          fieldType = 'array';
+        } else if (field.isTuple) {
+          defaultValue = [];
+          fieldType = 'tuple';
+        } else if (field.isCustomType) {
+          defaultValue = {};
+          fieldType = field.customTypeName;
+        } else {
+          defaultValue = null;
+          fieldType = 'object';
+        }
+        
+        const result = {
+          name: field.name,
+          type: fieldType,
+          value: defaultValue
+        };
+        
+        // 如果是数组，添加数组相关属性
+        if (field.isArray) {
+          result.isArray = true;
+          result.itemType = field.itemType || 'any';
+        }
+        
+        // 如果是元组，添加元组相关属性
+        if (field.isTuple) {
+          result.isTuple = true;
+          result.tupleItems = field.tupleItems || [];
+        }
+        
+        // 如果是自定义类型，添加嵌套接口信息
+        if (field.nestedInterface) {
+          result.nestedInterface = field.nestedInterface;
+        }
+        
+        return result;
+      });
+    }
+  }
+  
+  // 如果仍然无法从代码中提取接口定义，则尝试从接口名称生成一个简单的默认结构
+  console.warn(`无法从代码中解析接口: ${typeName}，使用默认字段`);
+  
+  // 返回默认结构
+  return [
+    { name: 'id', type: 'string', value: '' },
+    { name: 'name', type: 'string', value: '' },
+    { name: 'value', type: 'number', value: 0 }
+  ];
+}
+
+// 从源代码中解析接口定义
+function parseInterfaceFromCode(code, interfaceName, processedInterfaces = new Set()) {
+  // 防止无限递归（接口循环引用）
+  if (processedInterfaces.has(interfaceName)) {
+    return {
+      name: interfaceName,
+      fields: [{ name: 'circular-reference', type: 'object', value: '{}' }]
+    };
+  }
+  
+  processedInterfaces.add(interfaceName);
+  
+  let match = null;
+  
+  try {
+    const pattern = `(?:export\\s+)?interface\\s+${interfaceName}\\s*\\{([\\s\\S]*?)\\}`;
+    const regex1 = new RegExp(pattern, 'g');
+    match = regex1.exec(code);
+  } catch (error) {
+    console.error('正则表达式1错误:', error);
+  }
+  
+  if (!match || !match[1]) return null;
+  
+  const interfaceBody = match[1];
+  const fields = [];
+  
+  const fieldRegex = /([a-zA-Z_$][a-zA-Z0-9_$]*)\s*:\s*([^;]+);/g;
+  let fieldMatch;
+  
+  while ((fieldMatch = fieldRegex.exec(interfaceBody)) !== null) {
+    const fieldName = fieldMatch[1];
+    const fieldType = fieldMatch[2].trim();
+    
+    let parsedType = {
+      name: fieldName,
+      type: fieldType
+    };
+    
+    if (fieldType.includes('Array<') || fieldType.includes('[]')) {
+      parsedType.isArray = true;
+      let itemType;
+      if (fieldType.includes('Array<')) {
+        itemType = fieldType.match(/Array<(.+)>/)?.[1]?.trim();
+      } else {
+        itemType = fieldType.replace('[]', '').trim();
+      }
+      parsedType.itemType = itemType;
+      
+      if (itemType && (itemType.startsWith('I') || /^[A-Z][a-zA-Z0-9]*$/.test(itemType))) {
+        parsedType.nestedInterface = parseInterfaceFromCode(code, itemType, new Set(processedInterfaces));
+      }
+    }
+    else if (fieldType.startsWith('[') && fieldType.endsWith(']')) {
+      parsedType.isTuple = true;
+      const tupleItemsStr = fieldType.substring(1, fieldType.length - 1);
+      parsedType.tupleItems = tupleItemsStr.split(',').map(t => t.trim());
+      
+      parsedType.nestedInterfaces = [];
+      parsedType.tupleItems.forEach((tupleType, index) => {
+        if (tupleType.startsWith('I') || /^[A-Z][a-zA-Z0-9]*$/.test(tupleType)) {
+          parsedType.nestedInterfaces[index] = parseInterfaceFromCode(code, tupleType, new Set(processedInterfaces));
+        }
+      });
+    }
+    else if (fieldType.startsWith('I') || /^[A-Z][a-zA-Z0-9]*$/.test(fieldType)) {
+      parsedType.isCustomType = true;
+      parsedType.customTypeName = fieldType;
+      
+      parsedType.nestedInterface = parseInterfaceFromCode(code, fieldType, new Set(processedInterfaces));
+    }
+    
+    fields.push(parsedType);
+  }
+  
+  return {
+    name: interfaceName,
+    fields
+  };
+}
+
 // Parse function parameters from parameter string
 function parseParameters(paramsString) {
   const params = [];
@@ -1025,9 +1526,64 @@ function parseParameters(paramsString) {
       const name = typeMatch[1];
       let type = typeMatch[2] ? typeMatch[2].trim() : 'any';
       const defaultValue = typeMatch[3] ? typeMatch[3].trim() : null;
-
+      
+      // 处理接口类型（如IA, IB等）
+      if (type && (isInterfaceType(type) || /^[A-Z][a-zA-Z0-9]*$/.test(type))) {
+        // 尝试解析复杂类型
+        try {
+          // 创建复杂类型参数
+          const complexParam = {
+            name,
+            type: 'complex',
+            complexType: type,
+            value: defaultValue || '{}',
+            fields: []
+          };
+          
+          // 尝试从window中获取类型定义
+          const typeInfo = parseComplexType(type);
+          
+          if (typeInfo && typeInfo.fields) {
+            complexParam.fields = typeInfo.fields.map(field => {
+              // 为每个字段创建初始值
+              let fieldValue = null;
+              let fieldType = field.type;
+              
+              // 根据字段类型设置不同的初始值
+              if (field.isArray) {
+                fieldValue = [];
+              } else if (field.isTuple) {
+                fieldValue = field.tupleItems.map(() => null);
+              } else if (typeof field.type === 'string') {
+                if (field.type.toLowerCase().includes('string') || field.type.includes('Text')) {
+                  fieldValue = '';
+                } else if (field.type.toLowerCase().includes('number') || /[ui]\d+/i.test(field.type)) {
+                  fieldValue = 0;
+                } else if (field.type.toLowerCase().includes('boolean')) {
+                  fieldValue = false;
+                }
+              }
+              
+              return {
+                ...field,
+                value: fieldValue
+              };
+            });
+          }
+          
+          params.push(complexParam);
+        } catch (error) {
+          console.error('Error parsing complex type:', error);
+          // 如果解析失败，回退到基本类型
+          params.push({
+            name,
+            type: type || 'any',
+            value: defaultValue || ''
+          });
+        }
+      }
       // Handle object type
-      if (type && (type.includes('{') || type.startsWith('Record<') || type.startsWith('object'))) {
+      else if (type && (type.includes('{') || type.startsWith('Record<') || type.startsWith('object'))) {
         const param = {
           name,
           type: 'object',
@@ -1047,6 +1603,20 @@ function parseParameters(paramsString) {
           type: 'array',
           itemType,
           items: [{ value: '' }],
+          value: defaultValue || '[]'
+        };
+        params.push(param);
+      }
+      // Handle tuple type [type1, type2]
+      else if (type && type.startsWith('[') && type.endsWith(']')) {
+        const tupleTypesStr = type.substring(1, type.length - 1);
+        const tupleTypes = tupleTypesStr.split(',').map(t => t.trim());
+        
+        const param = {
+          name,
+          type: 'tuple',
+          tupleTypes,
+          tupleValues: tupleTypes.map(() => ''),
           value: defaultValue || '[]'
         };
         params.push(param);
@@ -1137,15 +1707,98 @@ function formatCode(code) {
 
 // Check if type is an object type
 function isObjectType(type) {
-  return type === 'object';
+  return type === 'object' || type.includes('{') || type.startsWith('Record<');
 }
 
-// Check if type is an array type
+// Check if a type is an array type
 function isArrayType(type) {
-  return type === 'array';
+  return type === 'array' || type.includes('[]') || type.startsWith('Array<');
 }
 
-// Check if a type is a Polkadot struct type and return the struct if found
+// 检查字段是否是自定义类型（结构体）
+function isCustomTypeField(field) {
+  return field && (field.customTypeName || 
+         (field.type && /^[A-Z]/.test(field.type)));
+}
+
+// 检查字段是否是数组类型
+function isArrayField(field) {
+  return field && (field.isArray || 
+         (field.type && (field.type.includes('Array<') || field.type.includes('[]'))));
+}
+
+// 检查字段是否是元组类型
+function isTupleField(field) {
+  return field && (field.isTuple || 
+         (field.type && ((field.type.startsWith('[') && field.type.endsWith(']')) || 
+                       field.type.includes('Tuple'))));
+}
+
+// 获取数组字段的项类型
+function getArrayItemType(field) {
+  if (field.itemType) return field.itemType;
+  
+  if (field.type.includes('Array<')) {
+    return field.type.match(/Array<(.+)>/)[1];
+  }
+  if (field.type.includes('[]')) {
+    return field.type.replace('[]', '');
+  }
+  return 'any';
+}
+
+// 获取元组字段的项类型
+function getTupleItemType(field, index) {
+  if (field.tupleItems && field.tupleItems[index]) {
+    return field.tupleItems[index].type;
+  }
+  return 'any';
+}
+
+// 确保数组字段有items数组
+function getOrCreateFieldItems(field) {
+  if (!field.items) {
+    field.items = [{ value: '' }];
+  }
+  return field.items;
+}
+
+// 确保元组字段有tupleItems数组
+function getOrCreateTupleItems(field) {
+  if (!field.tupleItems) {
+    // 从类型字符串中提取元组项类型
+    const tupleMatch = field.type.match(/\[([^\]]+)\]/);
+    if (tupleMatch) {
+      const tupleTypes = tupleMatch[1].split(',').map(t => t.trim());
+      field.tupleItems = tupleTypes.map((type, index) => ({
+        type,
+        value: '',
+        index
+      }));
+    } else {
+      field.tupleItems = [{ type: 'any', value: '', index: 0 }];
+    }
+  }
+  return field.tupleItems;
+}
+
+// 添加复杂类型数组项
+function addComplexArrayItem(field) {
+  getOrCreateFieldItems(field).push({ value: '' });
+}
+
+// 移除复杂类型数组项
+function removeComplexArrayItem(field, index) {
+  if (field.items && index >= 0 && index < field.items.length) {
+    field.items.splice(index, 1);
+    // 确保至少有一项
+    if (field.items.length === 0) {
+      field.items.push({ value: '' });
+    }
+  }
+}
+
+// Check if type is a Polkadot struct type and return the struct if found
 function findReferencedStruct(type) {
   // Skip checking for non-struct types
   if (!type || typeof type !== 'string') return null;
@@ -1846,22 +2499,88 @@ ${codeToUse}
   }
 }
 
+// 递归处理复杂类型的字段值
+function processComplexTypeField(field) {
+  // 检查是否是自定义类型（结构体）
+  if (isCustomTypeField(field)) {
+    const result = {};
+    
+    // 处理所有嵌套字段
+    if (field.nestedFields && field.nestedFields.length > 0) {
+      field.nestedFields.forEach(nestedField => {
+        result[nestedField.name] = processComplexTypeField(nestedField);
+      });
+    }
+    
+    return result;
+  }
+  // 处理数组类型
+  else if (isArrayField(field)) {
+    if (!field.items || field.items.length === 0) return [];
+    
+    return field.items.map(item => {
+      const itemType = getArrayItemType(field);
+      return convertValueToType(item.value, itemType);
+    });
+  }
+  // 处理元组类型
+  else if (isTupleField(field)) {
+    if (!field.tupleItems || field.tupleItems.length === 0) return [];
+    
+    return field.tupleItems.map(item => {
+      return convertValueToType(item.value, item.type);
+    });
+  }
+  // 处理基本类型
+  else {
+    return convertValueToType(field.value, field.type);
+  }
+}
+
 // Prepare parameters for function execution
 function prepareParameters(params) {
   return params.map(param => {
-    if (param.type === 'object') {
+    // 处理复杂类型参数（接口类型）
+    if (param.type === 'complex') {
+      const result = {};
+      
+      // 处理接口类型的所有字段
+      if (param.fields && param.fields.length > 0) {
+        param.fields.forEach(field => {
+          result[field.name] = processComplexTypeField(field);
+        });
+      }
+      
+      return result;
+    }
+    // 处理对象类型
+    else if (param.type === 'object') {
       // Convert object properties to object
       const obj = {};
       param.properties.forEach(prop => {
         obj[prop.name] = convertValueToType(prop.value, prop.type);
       });
       return obj;
-    } else if (param.type === 'array') {
+    }
+    // 处理数组类型
+    else if (param.type === 'array') {
       // Convert array items
       return param.items.map(item =>
         convertValueToType(item.value, param.itemType)
       );
-    } else {
+    }
+    // 处理元组类型
+    else if (param.type === 'tuple') {
+      // 确保tupleValues数组存在
+      if (!param.tupleValues) param.tupleValues = param.tupleTypes.map(() => '');
+      
+      // 转换元组值
+      return param.tupleValues.map((value, index) => 
+        convertValueToType(value, param.tupleTypes[index])
+      );
+    }
+    // 处理基本类型
+    else {
       // Convert basic types
       return convertValueToType(param.value, param.type);
     }
