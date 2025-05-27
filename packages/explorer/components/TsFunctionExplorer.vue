@@ -76,6 +76,71 @@
                   </div>
                 </div>
 
+                <!-- U8aFixed Type Debug Interface -->
+                <div v-else-if="classInfo.type === 'U8aFixed'" class="space-y-3">
+                  <div class="space-y-2">
+                    <Label class="text-xs">Value (hex string or byte array)</Label>
+                    <Input v-model="classInfo.debugValue"
+                      placeholder="0x1234abcd... or [18, 52, 171, 205, ...]" class="h-8 w-full" />
+                    <div class="text-xs text-muted-foreground">
+                      Enter as hex string (0x...) or comma-separated bytes
+                    </div>
+                  </div>
+
+                  <Button variant="outline" size="sm" class="mt-3" @click="createU8aFixedInstance(index)">
+                    Create Instance
+                  </Button>
+
+                  <div v-if="classInfo.debugResult" class="mt-3">
+                    <Label class="text-xs">Instance:</Label>
+                    <pre
+                      class="bg-muted p-2 rounded text-xs mt-1 whitespace-pre-wrap">{{ classInfo.debugResult }}</pre>
+                  </div>
+                </div>
+
+                <!-- Type Alias Debug Interface -->
+                <div v-else-if="classInfo.type === 'TypeAlias'" class="space-y-3">
+                  <div class="space-y-2">
+                    <Label class="text-xs">Value <span class="text-muted-foreground">({{ classInfo.baseType }})</span></Label>
+                    <Input v-model="classInfo.debugValue"
+                      :placeholder="getPlaceholderForType(classInfo.baseType)" class="h-8 w-full" />
+                  </div>
+
+                  <Button variant="outline" size="sm" class="mt-3" @click="createTypeAliasInstance(index)">
+                    Create Instance
+                  </Button>
+
+                  <div v-if="classInfo.debugResult" class="mt-3">
+                    <Label class="text-xs">Instance:</Label>
+                    <pre
+                      class="bg-muted p-2 rounded text-xs mt-1 whitespace-pre-wrap">{{ classInfo.debugResult }}</pre>
+                  </div>
+                </div>
+
+                <!-- VecFixed Type Debug Interface -->
+                <div v-else-if="classInfo.type === 'VecFixed'" class="space-y-3">
+                  <div class="space-y-2">
+                    <Label class="text-xs">Values ({{ classInfo.length }} items of {{ classInfo.itemType }})</Label>
+                    <div class="space-y-2">
+                      <div v-for="i in classInfo.length" :key="i" class="flex space-x-2">
+                        <Label class="text-xs w-8">{{ i-1 }}:</Label>
+                        <Input v-model="classInfo.vecValues[i-1]"
+                          :placeholder="getPlaceholderForType(classInfo.itemType)" class="h-8 flex-grow" />
+                      </div>
+                    </div>
+                  </div>
+
+                  <Button variant="outline" size="sm" class="mt-3" @click="createVecFixedInstance(index)">
+                    Create Instance
+                  </Button>
+
+                  <div v-if="classInfo.debugResult" class="mt-3">
+                    <Label class="text-xs">Instance:</Label>
+                    <pre
+                      class="bg-muted p-2 rounded text-xs mt-1 whitespace-pre-wrap">{{ classInfo.debugResult }}</pre>
+                  </div>
+                </div>
+
                 <!-- Other Types Debug Interface -->
                 <div v-else class="space-y-3">
                   <div class="space-y-2">
@@ -168,7 +233,28 @@
                       </div>
                       
                       <div v-else-if="isArrayField(field)" class="ml-4 mt-1">
-                        <div class="flex flex-col space-y-2">
+                        <!-- 检查是否是固定长度数组 -->
+                        <div v-if="field.type.match(/\[([^;]+);\s*(\d+)\]/)" class="space-y-2">
+                          <div class="text-xs text-muted-foreground">
+                            固定长度数组 ({{ field.type.match(/\[([^;]+);\s*(\d+)\]/)[2] }} 项)
+                            <span v-if="field.type.includes('[u8;')">
+                              - 可输入十六进制字符串 (如: 0x1234...) 或单个数字
+                            </span>
+                          </div>
+                          <div class="flex flex-col space-y-2">
+                            <div v-for="(item, itemIndex) in getOrCreateFieldItems(field)" :key="itemIndex" class="flex space-x-2">
+                              <Input v-model="item.value" :placeholder="getPlaceholder(getArrayItemType(field))" class="h-8 flex-grow" />
+                              <Button size="sm" variant="outline" @click="removeComplexArrayItem(field, itemIndex)">
+                                <span class="i-lucide-minus h-4 w-4" />
+                              </Button>
+                            </div>
+                            <Button size="sm" variant="outline" @click="addComplexArrayItem(field)">
+                              Add
+                            </Button>
+                          </div>
+                        </div>
+                        <!-- 动态长度数组 -->
+                        <div v-else class="flex flex-col space-y-2">
                           <div v-for="(item, itemIndex) in getOrCreateFieldItems(field)" :key="itemIndex" class="flex space-x-2">
                             <Input v-model="item.value" :placeholder="getPlaceholder(getArrayItemType(field))" class="h-8 flex-grow" />
                             <Button size="sm" variant="outline" @click="removeComplexArrayItem(field, itemIndex)">
@@ -387,62 +473,22 @@ function processCodeString() {
     const code = props.codeString;
     if (!code || typeof code !== 'string') return;
     
-    // 保存代码以便后续解析接口
-    storeInterfaceCode(code);
-    
-    // 测试测试是否包含IA接口
-    if (code.includes('interface IA') || code.includes('interface IT') || code.includes('interface IE') || code.includes('interface ID') || code.includes('interface IB') || code.includes('interface IC')) {
-      console.log('检测到接口定义，已保存用于后续分析');
-      // 测试手动解析一下
-      const testResult = parseInterfaceFromCode(code, 'IA');
-      console.log('测试解析IA结果:', testResult);
-    }
-    
-    // 手动添加示例接口定义（用于测试）
-    const exampleInterfaces = `
-export interface IT {
-    a: number;
-    b: number;
-}
-
-export interface IE {
-    a: Array<number>;
-    b: number;
-    c: number;
-}
-
-export interface ID {
-    b: number;
-}
-
-export interface IB {
-    c: IC;
-}
-
-export interface IC {
-    d: Array<number>;
-    e: [string, string];
-}
-
-export interface IA {
-    b: IB;
-    tuple_field: [number, string];
-    array_field: number[];
-    slice_field: Array<number>;
-    ggg: IT;
-}
-`;
-    
-    // 将示例接口定义添加到存储的代码中
-    storedInterfaceCode = code + exampleInterfaces;
-    console.log('已添加示例接口定义');
-    
-    // 再次测试解析
-    const testResult2 = parseInterfaceFromCode(storedInterfaceCode, 'IA');
-    console.log('添加示例后解析IA结果:', testResult2);
-
     // Define codec types in the global scope
     window.Text = codecTypes.Text;
+    window.Registry = codecTypes.Registry;
+    window.u8 = codecTypes.u8;
+    window.u16 = codecTypes.u16;
+    window.u32 = codecTypes.u32;
+    window.u64 = codecTypes.u64;
+    window.u128 = codecTypes.u128;
+    window.i8 = codecTypes.i8;
+    window.i16 = codecTypes.i16;
+    window.i32 = codecTypes.i32;
+    window.i64 = codecTypes.i64;
+    window.i128 = codecTypes.i128;
+    window.bool = codecTypes.bool;
+    window.Bytes = codecTypes.Bytes;
+    window.Null = codecTypes.Null;
     window.U8 = codecTypes.U8;
     window.U16 = codecTypes.U16;
     window.U32 = codecTypes.U32;
@@ -453,6 +499,8 @@ export interface IA {
     window.I32 = codecTypes.I32;
     window.I64 = codecTypes.I64;
     window.I128 = codecTypes.I128;
+    window.VecFixed = codecTypes.VecFixed;
+    window.U8aFixed = codecTypes.U8aFixed;
 
     window.Bool = codecTypes.Bool;
     window.Bytes = codecTypes.Bytes;
@@ -461,8 +509,8 @@ export interface IA {
     window.Option = codecTypes.Option;
     window.Result = codecTypes.Result;
     window.Vec = codecTypes.Vec;
-    window.VecFixed = codecTypes.VecFixed;
     window.Tuple = codecTypes.Tuple;
+    window.Enum = codecTypes.Enum;
     
     // Extract and define Polkadot codec classes
     extractedClasses.value = extractAndDefineClasses(code);
@@ -483,13 +531,171 @@ function extractAndDefineClasses(code) {
   console.log('Attempting to extract and define classes...');
   const extractedClasses = [];
   
+  // Extract type aliases and constants (export const H160 = U8aFixed.with(...))
+  extractTypeAliasesAndConstants(code, extractedClasses);
+  
   // Extract standalone struct definitions (struct A { ... })
   extractStructDefinitions(code, extractedClasses);
   
   // Extract class definitions (export class A extends Struct { ... })
   extractClassDefinitions(code, extractedClasses);
+
+  console.log("extractedClasses", extractedClasses);
   
   return extractedClasses;
+}
+
+// Extract type aliases and constants
+function extractTypeAliasesAndConstants(code, extractedClasses) {
+  console.log('Extracting type aliases and constants...');
+  
+  // Pattern 1: export const TypeName = U8aFixed.with(bitLength as U8aBitLength);
+  const u8aFixedRegex = /export\s+const\s+([a-zA-Z_$][a-zA-Z0-9_$]*)\s*=\s*U8aFixed\.with\s*\(\s*(\d+)\s*(?:as\s+U8aBitLength)?\s*\)\s*;/g;
+  let match;
+  
+  while ((match = u8aFixedRegex.exec(code)) !== null) {
+    const typeName = match[1];
+    const bitLength = parseInt(match[2]);
+    const byteLength = Math.ceil(bitLength / 8);
+    
+    console.log(`Found U8aFixed type: ${typeName} with ${bitLength} bits (${byteLength} bytes)`);
+    
+    // Define in global scope
+    window[typeName] = codecTypes.U8aFixed.with(bitLength);
+    
+    // Add to extracted classes for display
+    extractedClasses.push({
+      name: typeName,
+      type: 'U8aFixed',
+      definition: `[u8; ${byteLength}] // ${bitLength} bits`,
+      debugMode: false,
+      valueType: 'u8',
+      debugValue: '',
+      debugResult: null
+    });
+  }
+  
+  // Pattern 2: export const TypeName = ExistingType;
+  const typeAliasRegex = /export\s+const\s+([a-zA-Z_$][a-zA-Z0-9_$]*)\s*=\s*([a-zA-Z_$][a-zA-Z0-9_$]*)\s*;/g;
+  
+  while ((match = typeAliasRegex.exec(code)) !== null) {
+    const aliasName = match[1];
+    const baseTypeName = match[2];
+    
+    console.log(`Found type alias: ${aliasName} = ${baseTypeName}`);
+    
+    // Check if base type exists in window
+    if (window[baseTypeName]) {
+      window[aliasName] = window[baseTypeName];
+      console.log(`Defined type alias ${aliasName} -> ${baseTypeName}`);
+      
+      // Add to extracted classes for display
+      extractedClasses.push({
+        name: aliasName,
+        type: 'TypeAlias',
+        definition: `type ${aliasName} = ${baseTypeName}`,
+        debugMode: false,
+        baseType: baseTypeName,
+        debugValue: '',
+        debugResult: null
+      });
+    } else {
+      // Try to resolve common Polkadot types
+      let resolvedType = null;
+      
+      switch (baseTypeName) {
+        case 'U32':
+          resolvedType = codecTypes.U32;
+          break;
+        case 'U64':
+          resolvedType = codecTypes.U64;
+          break;
+        case 'U128':
+          resolvedType = codecTypes.U128;
+          break;
+        case 'U16':
+          resolvedType = codecTypes.U16;
+          break;
+        case 'U8':
+          resolvedType = codecTypes.U8;
+          break;
+        case 'I32':
+          resolvedType = codecTypes.I32;
+          break;
+        case 'I64':
+          resolvedType = codecTypes.I64;
+          break;
+        case 'I128':
+          resolvedType = codecTypes.I128;
+          break;
+        case 'Bool':
+          resolvedType = codecTypes.Bool;
+          break;
+        case 'Text':
+          resolvedType = codecTypes.Text;
+          break;
+        default:
+          console.warn(`Unknown base type: ${baseTypeName} for alias ${aliasName}`);
+      }
+      
+      if (resolvedType) {
+        window[aliasName] = resolvedType;
+        console.log(`Defined type alias ${aliasName} -> ${baseTypeName} (resolved)`);
+        
+        // Add to extracted classes for display
+        extractedClasses.push({
+          name: aliasName,
+          type: 'TypeAlias',
+          definition: `type ${aliasName} = ${baseTypeName}`,
+          debugMode: false,
+          baseType: baseTypeName,
+          debugValue: '',
+          debugResult: null
+        });
+      }
+    }
+  }
+  
+  // Pattern 3: export const TypeName = VecFixed.with(Type, length);
+  const vecFixedRegex = /export\s+const\s+([a-zA-Z_$][a-zA-Z0-9_$]*)\s*=\s*VecFixed\.with\s*\(\s*([^,]+)\s*,\s*([^)]+)\s*\)\s*;/g;
+  
+  while ((match = vecFixedRegex.exec(code)) !== null) {
+    const typeName = match[1];
+    const itemType = match[2].trim();
+    const length = match[3].trim();
+    
+    console.log(`Found VecFixed type: ${typeName} = VecFixed<${itemType}, ${length}>`);
+    
+    // Try to resolve the item type
+    let resolvedItemType = window[itemType];
+    if (!resolvedItemType) {
+      // Try common types
+      switch (itemType) {
+        case 'u8': resolvedItemType = codecTypes.u8; break;
+        case 'u16': resolvedItemType = codecTypes.u16; break;
+        case 'u32': resolvedItemType = codecTypes.u32; break;
+        case 'u64': resolvedItemType = codecTypes.u64; break;
+        default: resolvedItemType = codecTypes.u8; // fallback
+      }
+    }
+    
+    if (resolvedItemType) {
+      window[typeName] = codecTypes.VecFixed.with(resolvedItemType, parseInt(length) || 1);
+      
+      // Add to extracted classes for display
+      extractedClasses.push({
+        name: typeName,
+        type: 'VecFixed',
+        definition: `[${itemType}; ${length}]`,
+        debugMode: false,
+        itemType: itemType,
+        length: parseInt(length) || 1,
+        vecValues: new Array(parseInt(length) || 1).fill(''),
+        debugValue: '',
+        debugResult: null
+      });
+    }
+  }
 }
 
 // Extract standalone struct definitions
@@ -801,6 +1007,47 @@ function formatStructTypeDef(typeDefObj, className) {
       }
 
       console.log(`Processed Option type: ${fieldType}, value type: ${optionValueType}`);
+    }
+
+    // Handle U8aFixed.with() syntax
+    if (fieldType.includes('U8aFixed.with')) {
+      console.log(`Processing U8aFixed.with pattern: ${fieldType}`);
+
+      // Extract the bit length from U8aFixed.with(bitLength as U8aBitLength)
+      if (fieldType.includes('U8aFixed.with(')) {
+        const startIdx = fieldType.indexOf('U8aFixed.with(') + 'U8aFixed.with('.length;
+        
+        // Find the closing parenthesis or 'as' keyword
+        let endIdx = fieldType.indexOf(')', startIdx);
+        let asIdx = fieldType.indexOf(' as ', startIdx);
+        
+        if (asIdx > 0 && asIdx < endIdx) {
+          endIdx = asIdx;
+        }
+        
+        if (endIdx > startIdx) {
+          const bitLengthStr = fieldType.substring(startIdx, endIdx).trim();
+          const bitLength = parseInt(bitLengthStr);
+          
+          if (!isNaN(bitLength)) {
+            const byteLength = Math.ceil(bitLength / 8);
+            fieldType = `[u8; ${byteLength}]`;
+            itemType = 'u8';
+            isVec = true;
+            console.log(`Converted U8aFixed.with(${bitLength}) to ${fieldType}`);
+          } else {
+            fieldType = `[u8; N]`;
+            itemType = 'u8';
+            isVec = true;
+            console.log(`Converted U8aFixed.with(${bitLengthStr}) to ${fieldType} (could not parse bit length)`);
+          }
+        } else {
+          fieldType = `[u8; N]`;
+          itemType = 'u8';
+          isVec = true;
+          console.log(`Converted incomplete U8aFixed.with to ${fieldType}`);
+        }
+      }
     }
 
     // Handle VecFixed.with() syntax
@@ -1872,6 +2119,14 @@ function getPlaceholder(type) {
       return '{}';
     case 'array':
       return '[]';
+    case 'u8':
+      return '0-255 或 0x1A';
+    case 'u16':
+      return '0-65535';
+    case 'u32':
+      return '0-4294967295';
+    case 'u64':
+      return '0-18446744073709551615';
     default:
       return '';
   }
@@ -1881,12 +2136,24 @@ function getPlaceholder(type) {
 function getPlaceholderForType(type) {
   if (!type) return '';
 
-  if (type.includes('u8') || type.includes('u16') || type.includes('u32') ||
-    type.includes('u64') || type.includes('u128') || type.includes('i8') ||
-    type.includes('i16') || type.includes('i32') || type.includes('i64') ||
-    type.includes('i128')) {
+  // Handle specific Polkadot types
+  if (type.includes('u8') || type.includes('U8')) {
+    return '0-255';
+  } else if (type.includes('u16') || type.includes('U16')) {
+    return '0-65535';
+  } else if (type.includes('u32') || type.includes('U32')) {
+    return '0-4294967295';
+  } else if (type.includes('u64') || type.includes('U64')) {
     return '0';
-  } else if (type.includes('bool')) {
+  } else if (type.includes('u128') || type.includes('U128')) {
+    return '0';
+  } else if (type.includes('i8') || type.includes('I8') ||
+             type.includes('i16') || type.includes('I16') ||
+             type.includes('i32') || type.includes('I32') ||
+             type.includes('i64') || type.includes('I64') ||
+             type.includes('i128') || type.includes('I128')) {
+    return '0';
+  } else if (type.includes('bool') || type.includes('Bool')) {
     return 'true/false';
   } else if (type.includes('str') || type.includes('String') || type.includes('Text')) {
     return 'text...';
@@ -1898,12 +2165,15 @@ function getPlaceholderForType(type) {
     return 'value...';
   } else if (type.includes('Tuple') || (type.startsWith('(') && type.endsWith(')'))) {
     return '(...)';
-  } else if (type.includes('H256') || type.includes('Hash')) {
+  } else if (type.includes('H256') || type.includes('Hash') || type.includes('H160')) {
     return '0x...';
   } else if (type.includes('AccountId')) {
     return '5...';
   } else if (type.includes('Balance')) {
     return '1000000000000';
+  } else if (type.includes('CommunityId') || type.includes('EventId') || 
+             type.includes('RewardId') || type.includes('ContentId')) {
+    return '0';
   } else {
     return 'value...';
   }
@@ -1964,7 +2234,50 @@ function processStructField(field) {
     }
   } else if (field.isVec) {
     // 处理向量字段
-    return field.items.map(item => convertValueToPolkadotType(item.value, field.itemType));
+    const values = field.items.map(item => convertValueToPolkadotType(item.value, field.itemType));
+    
+    // 检查是否是固定长度数组 [type; length]
+    const fixedArrayMatch = field.type.match(/\[([^;]+);\s*(\d+)\]/);
+    if (fixedArrayMatch) {
+      const expectedLength = parseInt(fixedArrayMatch[2]);
+      const itemType = fixedArrayMatch[1].trim();
+      
+      // 如果是 u8 类型的固定长度数组，需要特殊处理
+      if (itemType === 'u8') {
+        // 如果用户只输入了一个值，将其解释为十六进制字符串或重复该值
+        if (values.length === 1 && values[0] !== null) {
+          const singleValue = values[0];
+          if (typeof singleValue === 'string' && singleValue.startsWith('0x')) {
+            // 十六进制字符串，转换为字节数组
+            const hexStr = singleValue.slice(2);
+            const bytes = [];
+            for (let i = 0; i < hexStr.length; i += 2) {
+              bytes.push(parseInt(hexStr.substr(i, 2), 16));
+            }
+            // 填充或截断到期望长度
+            while (bytes.length < expectedLength) bytes.push(0);
+            return bytes.slice(0, expectedLength);
+          } else if (typeof singleValue === 'number') {
+            // 单个数字，重复到期望长度
+            return new Array(expectedLength).fill(singleValue);
+          }
+        }
+        
+        // 填充到期望长度
+        while (values.length < expectedLength) {
+          values.push(0);
+        }
+        return values.slice(0, expectedLength);
+      } else {
+        // 其他类型的固定长度数组
+        while (values.length < expectedLength) {
+          values.push(convertValueToPolkadotType('', itemType));
+        }
+        return values.slice(0, expectedLength);
+      }
+    }
+    
+    return values;
   } else if (field.isTuple) {
     // 处理元组字段
     return field.tupleItems.map(item => convertValueToPolkadotType(item.value, item.type));
@@ -2053,6 +2366,145 @@ function createEnumInstance(index) {
     classInfo.debugResult = JSON.stringify(instance, null, 2);
   } catch (error) {
     console.error('Error creating enum instance:', error);
+    classInfo.debugResult = `Error: ${error.message}`;
+  }
+}
+
+// Create instance of U8aFixed type
+function createU8aFixedInstance(index) {
+  const classInfo = extractedClasses.value[index];
+  if (!classInfo) return;
+
+  try {
+    // Get the class constructor
+    const ClassConstructor = window[classInfo.name];
+    if (!ClassConstructor) {
+      classInfo.debugResult = `Error: Class ${classInfo.name} not found in global scope`;
+      return;
+    }
+
+    let value = classInfo.debugValue;
+    let instance;
+
+    if (value.startsWith('0x')) {
+      // Hex string input
+      instance = new ClassConstructor(window.registry, value);
+    } else if (value.startsWith('[') && value.endsWith(']')) {
+      // Array input like [18, 52, 171, 205]
+      try {
+        const byteArray = JSON.parse(value);
+        instance = new ClassConstructor(window.registry, byteArray);
+      } catch (parseError) {
+        throw new Error('Invalid array format. Use [1, 2, 3, ...] format');
+      }
+    } else if (value.includes(',')) {
+      // Comma-separated values
+      const byteArray = value.split(',').map(v => parseInt(v.trim()));
+      instance = new ClassConstructor(window.registry, byteArray);
+    } else {
+      // Single value or string
+      instance = new ClassConstructor(window.registry, value);
+    }
+
+    // Display result
+    const result = `
+hex: ${instance.toHex()}
+JSON: ${JSON.stringify(instance.toJSON(), null, 2)}
+`;
+    classInfo.debugResult = result;
+  } catch (error) {
+    console.error('Error creating U8aFixed instance:', error);
+    classInfo.debugResult = `Error: ${error.message}`;
+  }
+}
+
+// Create instance of type alias
+function createTypeAliasInstance(index) {
+  const classInfo = extractedClasses.value[index];
+  if (!classInfo) return;
+
+  try {
+    // Get the class constructor
+    const ClassConstructor = window[classInfo.name];
+    if (!ClassConstructor) {
+      classInfo.debugResult = `Error: Type ${classInfo.name} not found in global scope`;
+      return;
+    }
+
+    let value = classInfo.debugValue;
+    
+    // Convert value based on base type
+    if (classInfo.baseType && (classInfo.baseType.includes('U') || classInfo.baseType.includes('I'))) {
+      // Numeric types
+      if (value.startsWith('0x')) {
+        value = parseInt(value, 16);
+      } else {
+        value = Number(value) || 0;
+      }
+    } else if (classInfo.baseType === 'Bool') {
+      value = value === 'true' || value === true;
+    }
+
+    const instance = new ClassConstructor(window.registry, value);
+
+    // Display result
+    const result = `
+hex: ${instance.toHex()}
+JSON: ${JSON.stringify(instance.toJSON(), null, 2)}
+`;
+    classInfo.debugResult = result;
+  } catch (error) {
+    console.error('Error creating type alias instance:', error);
+    classInfo.debugResult = `Error: ${error.message}`;
+  }
+}
+
+// Create instance of VecFixed type
+function createVecFixedInstance(index) {
+  const classInfo = extractedClasses.value[index];
+  if (!classInfo) return;
+
+  try {
+    // Get the class constructor
+    const ClassConstructor = window[classInfo.name];
+    if (!ClassConstructor) {
+      classInfo.debugResult = `Error: Class ${classInfo.name} not found in global scope`;
+      return;
+    }
+
+    // Ensure vecValues array exists
+    if (!classInfo.vecValues) {
+      classInfo.vecValues = new Array(classInfo.length).fill('');
+    }
+
+    // Convert values based on item type
+    const values = classInfo.vecValues.map(val => {
+      if (!val) return 0; // default value
+      
+      if (classInfo.itemType && (classInfo.itemType.includes('u') || classInfo.itemType.includes('i'))) {
+        // Numeric types
+        if (val.startsWith && val.startsWith('0x')) {
+          return parseInt(val, 16);
+        } else {
+          return Number(val) || 0;
+        }
+      } else if (classInfo.itemType === 'bool') {
+        return val === 'true' || val === true;
+      } else {
+        return val;
+      }
+    });
+
+    const instance = new ClassConstructor(window.registry, values);
+
+    // Display result
+    const result = `
+hex: ${instance.toHex()}
+JSON: ${JSON.stringify(instance.toJSON(), null, 2)}
+`;
+    classInfo.debugResult = result;
+  } catch (error) {
+    console.error('Error creating VecFixed instance:', error);
     classInfo.debugResult = `Error: ${error.message}`;
   }
 }
@@ -2275,6 +2727,12 @@ function convertValueToPolkadotType(value, type) {
     type.includes('u64') || type.includes('u128') || type.includes('i8') ||
     type.includes('i16') || type.includes('i32') || type.includes('i64') ||
     type.includes('i128') || type.includes('Compact'))) {
+    
+    // Handle hexadecimal input
+    if (typeof value === 'string' && value.startsWith('0x')) {
+      return parseInt(value, 16);
+    }
+    
     return Number(value);
   }
 
@@ -2444,6 +2902,8 @@ async function executeFunction(index) {
 
     // Replace api. with the global api defined above
     codeToUse = codeToUse.replace(/api\./g, `window["${apiNamespace}"].api.`);
+
+    console.log('codeToUse', codeToUse);
 
     // If it's an API function, we might need additional processing
     if (func.isApiCall) {
